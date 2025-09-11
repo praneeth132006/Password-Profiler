@@ -44,11 +44,14 @@ with `rank`.
 - Import and optimize existing `.rule` files (dedupe, reorder by expected yield).
 - Optionally rank rule lines the same way `rank` orders candidates.
 
-### 5. Smarter token extraction  ·  impact: med · effort: M
-- Transliteration / diacritic folding (`José → jose`).
-- Locale-aware date formats and keyboard-walk seeds (`qwerty`, `1q2w3e`).
-- Frequency-weighted provenance: name/DOB tokens rank above generic keywords, so
-  combination and ranking both prefer the strongest signals.
+### 5. Smarter token extraction  ·  impact: med · effort: M · **partly done**
+- Transliteration / diacritic folding (`José → jose`). **(done — always on;
+  umlauts/ß/æ/œ also emit their digraph form, e.g. `Müller → mueller`.)**
+- Keyboard-walk seeds (`qwerty`, `1q2w3e`, `qazwsx`, number-pad walks).
+  **(done — opt-in via `rules.keyboard_walks` / `generate --keyboard-walks`.)**
+- Still open: locale-aware date formats (beyond the extra fragments now emitted),
+  and frequency-weighted provenance so name/DOB tokens rank above generic
+  keywords in both combination and ranking.
 
 ### 6. Mask-guided generation  ·  impact: med · effort: M
 Intersect token mutation with a hashcat-style **mask** (`?u?l?l?l?d?d?d?d`) so a

@@ -46,7 +46,7 @@ func newEstimateCmd() *cobra.Command {
 			// Always bound the estimate so it terminates, regardless of config.
 			cfg.Rules.Exhaustive = false
 
-			base := tokens.Extract(cfg.Profile)
+			base := tokens.Build(cfg)
 			if len(base) == 0 {
 				return fmt.Errorf("inputs contain no usable tokens")
 			}

@@ -136,7 +136,7 @@ func newValidateCmd() *cobra.Command {
 		if cfg.Output.Mode == "rules" && policy.FromProfile(cfg.Policy).Active() {
 			return fmt.Errorf("rules mode cannot enforce a password policy")
 		}
-		base := tokens.Extract(cfg.Profile)
+		base := tokens.Build(cfg)
 		if len(base) == 0 {
 			return fmt.Errorf("profile contains no usable tokens")
 		}

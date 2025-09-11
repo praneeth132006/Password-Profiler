@@ -38,7 +38,10 @@ shipped in [`testdata/sample.yaml`](testdata/sample.yaml) is fictional.
 
 - **Targeted generation** from names, dates, companies, domains and keywords —
   token extraction, bounded cross-token combination, and a composable mutation
-  engine (case, leetspeak, affix years/suffixes, structural).
+  engine (case, leetspeak, affix years/suffixes, structural). Token extraction
+  folds diacritics to ASCII (`José → jose`, `Müller → muller`/`mueller`) and can
+  seed common keyboard walks (`qwerty`, `1q2w3e`, `qazwsx`) via
+  `rules.keyboard_walks` / `generate --keyboard-walks`.
 - **Likelihood ranking** — reorder any wordlist so the most probable passwords
   come first, with `--top N` selection in memory proportional to `N`, not the
   list length. See [Ranking for accuracy](#ranking-for-accuracy).

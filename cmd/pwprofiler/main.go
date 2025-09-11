@@ -62,11 +62,12 @@ type genOpts struct {
 
 func newGenerateCmd() *cobra.Command {
 	var (
-		configPath string
-		outPath    string
-		modeFlag   string
-		opts       genOpts
-		exhaustive bool
+		configPath    string
+		outPath       string
+		modeFlag      string
+		opts          genOpts
+		exhaustive    bool
+		keyboardWalks bool
 	)
 	cmd := &cobra.Command{
 		Use:   "generate",
@@ -79,6 +80,9 @@ func newGenerateCmd() *cobra.Command {
 			// Flag overrides.
 			if exhaustive {
 				cfg.Rules.Exhaustive = true
+			}
+			if keyboardWalks {
+				cfg.Rules.KeyboardWalks = true
 			}
 			if modeFlag != "" {
 				cfg.Output.Mode = modeFlag
@@ -103,6 +107,7 @@ func newGenerateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&exhaustive, "exhaustive", false, "enumerate the configured finite rules without count/work/byte caps (exact dedup; may require substantial RAM and disk)")
+	cmd.Flags().BoolVar(&keyboardWalks, "keyboard-walks", false, "seed common keyboard walks (qwerty, 1q2w3e, qazwsx, ...) as extra base tokens")
 	cmd.Flags().StringVarP(&configPath, "config", "c", "", "path to YAML config (required)")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "write candidates here instead of the config's output.file / stdout")
 	cmd.Flags().StringVar(&modeFlag, "mode", "", "override output mode: wordlist|rules")
@@ -163,7 +168,7 @@ func buildDeduper(cfg *profile.Config, strategy string) dedup.Deduper {
 
 // runWordlist runs the full pipeline and writes every candidate.
 func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr error) {
-	base := tokens.Extract(cfg.Profile)
+	base := tokens.Build(cfg)
 	if len(base) == 0 {
 		return fmt.Errorf("inputs contain no usable tokens")
 	}
@@ -282,7 +287,7 @@ func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr err
 	}
 
 	// Base wordlist: the combined tokens, buffered + deduped, budget-capped.
-	base := tokens.Extract(cfg.Profile)
+	base := tokens.Build(cfg)
 	combined := combine.Generate(base, combine.Config{
 		RepeatTokens: cfg.Rules.RepeatTokens,
 		MaxCombine:   cfg.Rules.MaxCombine,

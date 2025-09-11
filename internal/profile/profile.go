@@ -40,6 +40,7 @@ type Profile struct {
 type Rules struct {
 	Exhaustive        bool     `yaml:"exhaustive"`
 	RepeatTokens      bool     `yaml:"repeat_tokens"`
+	KeyboardWalks     bool     `yaml:"keyboard_walks"` // seed common keyboard walks (qwerty, 1q2w3e, ...)
 	LeetCap           int      `yaml:"leet_cap"`
 	MaxVariants       int      `yaml:"max_variants"`
 	MaxAttempts       int      `yaml:"max_attempts"`

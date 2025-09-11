@@ -16,6 +16,19 @@ reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- **Transliteration / diacritic folding in token extraction**: accented OSINT
+  values now also yield their ASCII forms automatically — `José → jose`,
+  `Müller → muller` and `mueller`, `straße → strasse` — so a target who
+  registers an accented name but types ASCII passwords is still covered. Always
+  on and additive; the accented form is kept too.
+- **Keyboard-walk seeds** (`rules.keyboard_walks` / `generate --keyboard-walks`):
+  opt-in injection of common keyboard-adjacency patterns (`qwerty`, `1q2w3e`,
+  `qazwsx`, `zxcvbnm`, number-pad walks, ...) as extra base tokens that flow
+  through the full mutation, combination and policy pipeline. Off by default so
+  targeted runs stay targeted.
+- **Richer date fragments**: `decomposeDate` now also emits unpadded `m+d`/`d+m`,
+  `mm+yy`, `yy+mm`, `mm+yyyy`, `yyyy+mm`, and `yy+mm+dd` forms for broader
+  date-based coverage.
 - **John the Ripper rule export**: `generate --mode rules --rule-format john`
   writes the mutation set as a `[List.Rules:pwprofiler]` section for
   `john --rules=pwprofiler`, alongside the existing hashcat `.rule` output.

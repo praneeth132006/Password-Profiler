@@ -13,10 +13,41 @@ import (
 	"github.com/praneeth132006/Password-Profiler/internal/profile"
 )
 
+// Build derives the full base-token set for a run: the profile-derived tokens
+// from Extract, plus opt-in keyboard-walk seeds when rules.keyboard_walks is
+// set. The result stays deterministic (unique + sorted) so downstream stages
+// and tests see stable output regardless of which sources contributed.
+func Build(cfg *profile.Config) []string {
+	base := Extract(cfg.Profile)
+	if cfg == nil || !cfg.Rules.KeyboardWalks {
+		return base
+	}
+	set := newOrderedSet()
+	for _, t := range base {
+		set.add(t)
+	}
+	for _, t := range keyboardWalkSeeds {
+		set.add(t)
+	}
+	out := set.slice()
+	sort.Strings(out)
+	return out
+}
+
 // Extract derives base tokens from a profile. The result is deterministic:
 // unique, lowercased, and sorted for stable output and testability.
 func Extract(p profile.Profile) []string {
 	set := newOrderedSet()
+
+	// addFolded adds a lowercase word plus any ASCII-folded variants it has, so
+	// "josé" also yields "jose" and "müller" yields "muller" and "mueller".
+	addFolded := func(w string) {
+		w = strings.ToLower(w)
+		set.add(w)
+		for _, f := range foldVariants(w) {
+			set.add(f)
+		}
+	}
 
 	addWord := func(s string) {
 		s = strings.TrimSpace(s)
@@ -27,11 +58,11 @@ func Extract(p profile.Profile) []string {
 		// separated joins ("Acme Corp" -> acme, corp, acmecorp, acme_corp).
 		words := splitWords(s)
 		for _, w := range words {
-			set.add(strings.ToLower(w))
+			addFolded(w)
 		}
 		if len(words) > 1 {
-			set.add(strings.ToLower(strings.Join(words, "")))
-			set.add(strings.ToLower(strings.Join(words, "_")))
+			addFolded(strings.Join(words, ""))
+			addFolded(strings.Join(words, "_"))
 		}
 	}
 
@@ -116,11 +147,18 @@ func decomposeDate(dob string) []string {
 		yyyy, yy, mm, dd, m, d,
 		mm + dd,        // 0512
 		dd + mm,        // 1205
+		m + d,          // 512  (unpadded)
+		d + m,          // 125  (unpadded)
+		mm + yy,        // 0590
+		yy + mm,        // 9005
+		mm + yyyy,      // 051990
+		yyyy + mm,      // 199005
 		dd + mm + yyyy, // 12051990
 		mm + dd + yyyy, // 05121990
 		dd + mm + yy,   // 120590
 		mm + dd + yy,   // 051290
 		yyyy + mm + dd, // 19900512
+		yy + mm + dd,   // 900512
 	}
 	// Drop empties / accidental duplicates while preserving determinism upstream.
 	seen := make(map[string]struct{}, len(frags))
