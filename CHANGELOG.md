@@ -8,6 +8,11 @@ reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- **Phase 6 — Scale hardening**: pluggable de-duplication (`internal/dedup`)
+  with an exact hash set and a memory-bounded Bloom filter (≈9 MB for 5M items
+  at a 0.1% false-positive rate), selectable via `--dedup auto|exact|bloom`; a
+  `--workers N` mutation pool that parallelizes generation while a single
+  consumer serializes writes; and richer stats (dedup mode, elapsed, rate).
 - **Phase 5 — Policy filter** (`internal/policy`): drop candidates that can't
   satisfy the target policy (min/max length, required character classes) before
   they reach the output; the stats line reports how many were rejected.
@@ -32,4 +37,5 @@ reaches 1.0.
   and pull-request templates, and a GitHub Actions CI workflow.
 
 ### Notes
-- No scale hardening yet (Phase 6).
+- Phases 1–6 complete. The optional CeWL-style crawler (Phase 7) is not yet
+  implemented.

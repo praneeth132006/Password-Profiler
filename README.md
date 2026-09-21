@@ -69,10 +69,17 @@ you can pipe candidates straight into a cracker without polluting the stream.
 pwprofiler generate --config <file.yaml> [flags]
 
 Flags:
-  -c, --config string   path to YAML config (required)
-  -o, --output string   write candidates here instead of the config's output.file / stdout
-      --mode string     override output mode: wordlist|rules
+  -c, --config string    path to YAML config (required)
+  -o, --output string    write candidates here instead of the config's output.file / stdout
+      --mode string      override output mode: wordlist|rules
+      --workers int      mutation worker goroutines (>1 is faster but unordered) (default 1)
+      --dedup string     dedup strategy: auto|exact|bloom (default "auto")
 ```
+
+For large runs, `--workers N` parallelizes mutation across N goroutines (a single
+consumer still serializes writes, so output is correct but unordered), and
+`--dedup bloom` keeps memory bounded regardless of output size. `auto` (the
+default) switches to a Bloom filter once the budget is large.
 
 ## Config
 
@@ -115,7 +122,7 @@ output:
 Unknown keys and malformed values (bad dates, invalid enums) are rejected at
 load time with a clear error.
 
-### What's implemented today (Phases 1–5)
+### What's implemented today (Phases 1–6)
 
 - **Config** parsing + validation (`internal/profile`).
 - **Token extraction** (`internal/tokens`): multi-word splitting
@@ -145,10 +152,13 @@ load time with a clear error.
   target policy — min/max length and required character classes (upper, lower,
   digit, special) — shrinking the keyspace before it reaches the cracker. The
   stats line reports how many candidates the policy rejected.
-- **Buffered output** (`internal/output`): `bufio.Writer`, exact dedup, global
-  budget cap, and a stats summary.
-
-Scale hardening lands in Phase 6 (see Roadmap).
+- **Buffered output** (`internal/output`): `bufio.Writer`, pluggable dedup,
+  global budget cap, and a stats summary (count, dedup mode, elapsed, rate).
+- **Scale hardening** (`internal/dedup` + worker pool): choose exact
+  (map-based) or **Bloom-filter** de-dup — the Bloom filter holds ~9 MB for 5M
+  items at a 0.1% false-positive rate instead of hundreds of MB — and run
+  mutation across a `--workers` pool (a single consumer serializes writes, so
+  results stay correct; ~2.6× faster at 4 workers on the sample).
 
 ## Cracking pipe examples
 
@@ -190,6 +200,7 @@ pwprofiler/
 │   ├── mutate/          # composable transform engine
 │   ├── policy/          # filter by length + required character classes
 │   ├── rules/           # hashcat .rule emitter + validating interpreter
+│   ├── dedup/           # exact + Bloom-filter de-duplication
 │   └── output/          # buffered, deduped, budget-capped sink
 ├── testdata/            # sample config
 ├── go.mod
@@ -215,7 +226,7 @@ Every `internal/` package ships table-driven tests. `go build ./...` and
 - [x] **Phase 3 — Full mutation engine:** leet, affix years, structural, depth chaining.
 - [x] **Phase 4 — Rule mode:** hashcat `.rule` emitter.
 - [x] **Phase 5 — Policy filter.**
-- [ ] **Phase 6 — Scale hardening:** scalable dedup, worker pool, keyspace stats.
+- [x] **Phase 6 — Scale hardening:** scalable dedup, worker pool, keyspace stats.
 - [ ] **Phase 7 — (Optional) crawler:** CeWL-style keyword harvesting (isolated).
 
 ## Contributing

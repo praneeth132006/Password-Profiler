@@ -11,9 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/praneeth132006/Password-Profiler/internal/combine"
+	"github.com/praneeth132006/Password-Profiler/internal/dedup"
 	"github.com/praneeth132006/Password-Profiler/internal/mutate"
 	"github.com/praneeth132006/Password-Profiler/internal/output"
 	"github.com/praneeth132006/Password-Profiler/internal/policy"
@@ -47,11 +49,18 @@ func newRootCmd() *cobra.Command {
 	return root
 }
 
+// genOpts carries CLI-only knobs (not part of the config schema) for scale.
+type genOpts struct {
+	workers int    // mutation worker goroutines (>1 trades output ordering for speed)
+	dedup   string // auto | exact | bloom
+}
+
 func newGenerateCmd() *cobra.Command {
 	var (
 		configPath string
 		outPath    string
 		modeFlag   string
+		opts       genOpts
 	)
 	cmd := &cobra.Command{
 		Use:   "generate",
@@ -68,30 +77,67 @@ func newGenerateCmd() *cobra.Command {
 			if outPath != "" {
 				cfg.Output.File = outPath
 			}
-			return runGenerate(cmd, cfg)
+			if opts.workers < 1 {
+				opts.workers = 1
+			}
+			switch opts.dedup {
+			case "", "auto", "exact", "bloom":
+			default:
+				return fmt.Errorf("--dedup %q: must be auto|exact|bloom", opts.dedup)
+			}
+			return runGenerate(cmd, cfg, opts)
 		},
 	}
 	cmd.Flags().StringVarP(&configPath, "config", "c", "", "path to YAML config (required)")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "write candidates here instead of the config's output.file / stdout")
 	cmd.Flags().StringVar(&modeFlag, "mode", "", "override output mode: wordlist|rules")
+	cmd.Flags().IntVar(&opts.workers, "workers", 1, "mutation worker goroutines (>1 speeds up large runs but does not preserve output order)")
+	cmd.Flags().StringVar(&opts.dedup, "dedup", "auto", "dedup strategy: auto|exact|bloom (auto uses bloom for large budgets)")
 	_ = cmd.MarkFlagRequired("config")
 	return cmd
 }
 
-// runGenerate executes the Phase 1 pipeline: tokens -> mutate -> buffered output.
-func runGenerate(cmd *cobra.Command, cfg *profile.Config) error {
+// runGenerate dispatches on the output mode.
+func runGenerate(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
 	switch cfg.Output.Mode {
 	case "wordlist":
-		return runWordlist(cmd, cfg)
+		return runWordlist(cmd, cfg, opts)
 	case "rules":
-		return runRules(cmd, cfg)
+		return runRules(cmd, cfg, opts)
 	default:
 		return fmt.Errorf("output.mode %q: must be wordlist|rules", cfg.Output.Mode)
 	}
 }
 
+// bloomAutoThreshold is the budget at/above which "auto" dedup picks the
+// memory-bounded Bloom filter over an exact set.
+const bloomAutoThreshold = 1_000_000
+
+// buildDeduper constructs the de-dup strategy from config + the --dedup flag.
+// Returns nil when de-duplication is disabled.
+func buildDeduper(cfg *profile.Config, strategy string) dedup.Deduper {
+	if !cfg.Output.Dedupe {
+		return nil
+	}
+	budget := cfg.Output.Budget
+	if budget <= 0 {
+		budget = 5_000_000
+	}
+	switch strategy {
+	case "exact":
+		return dedup.NewExact()
+	case "bloom":
+		return dedup.NewBloom(budget, 0.001)
+	default: // auto
+		if budget >= bloomAutoThreshold {
+			return dedup.NewBloom(budget, 0.001)
+		}
+		return dedup.NewExact()
+	}
+}
+
 // runWordlist runs the full pipeline and writes every candidate.
-func runWordlist(cmd *cobra.Command, cfg *profile.Config) error {
+func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
 	// Resolve the destination: a file, or stdout. Candidates go to the sink;
 	// the stats summary always goes to stderr so a stdout pipe stays clean.
 	var sink *os.File
@@ -126,10 +172,45 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config) error {
 		MaxLen:  cfg.Policy.MaxLen,
 		Require: cfg.Policy.Require,
 	})
-	w := output.New(sink, cfg.Output.Dedupe, cfg.Output.Budget)
+	w := output.New(sink, buildDeduper(cfg, opts.dedup), cfg.Output.Budget)
 
+	start := time.Now()
+	filtered, err := expand(combined.Tokens, eng, pol, w, opts.workers)
+	if err != nil {
+		return err
+	}
+	stats, err := w.Flush()
+	if err != nil {
+		return err
+	}
+	elapsed := time.Since(start)
+
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"pwprofiler: %d base tokens -> %s -> %d candidates emitted (%d duplicates suppressed%s)%s\n",
+		len(base), combined.Describe(), stats.Emitted, stats.Duplicates,
+		policyNote(pol, filtered), budgetNote(stats.BudgetHit, cfg.Output.Budget))
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"           dedup=%s workers=%d, %s in %s (%.0f cand/s)\n",
+		w.DedupKind(), opts.workers, humanCount(stats.Emitted), elapsed.Round(time.Millisecond),
+		ratePerSec(stats.Emitted, elapsed))
+	return nil
+}
+
+// expand feeds every token's mutations through the policy filter into the
+// writer. With workers == 1 it is sequential and deterministic; with workers
+// > 1 a pool of goroutines runs the (pure) mutation + policy work in parallel
+// while a single consumer serializes writes — faster, but output order is no
+// longer guaranteed. Returns the number of candidates rejected by policy.
+func expand(toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer, workers int) (int, error) {
+	if workers <= 1 {
+		return expandSequential(toks, eng, pol, w)
+	}
+	return expandConcurrent(toks, eng, pol, w, workers)
+}
+
+func expandSequential(toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer) (int, error) {
 	var filtered int
-	for _, tok := range combined.Tokens {
+	for _, tok := range toks {
 		for _, cand := range eng.Expand(tok) {
 			if pol.Active() && !pol.Allow(cand) {
 				filtered++
@@ -137,27 +218,94 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config) error {
 			}
 			accepted, err := w.Add(cand)
 			if err != nil {
-				return err
+				return filtered, err
 			}
 			if !accepted { // budget reached
-				break
+				return filtered, nil
 			}
 		}
 		if w.BudgetReached() {
 			break
 		}
 	}
+	return filtered, nil
+}
 
-	stats, err := w.Flush()
-	if err != nil {
-		return err
+func expandConcurrent(toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer, workers int) (int, error) {
+	type batch struct {
+		cands    []string
+		filtered int
 	}
+	jobs := make(chan string)
+	results := make(chan batch, workers)
+	done := make(chan struct{})
+	var doneOnce sync.Once
+	stop := func() { doneOnce.Do(func() { close(done) }) }
 
-	fmt.Fprintf(cmd.ErrOrStderr(),
-		"pwprofiler: %d base tokens -> %s -> %d candidates emitted (%d duplicates suppressed%s)%s\n",
-		len(base), combined.Describe(), stats.Emitted, stats.Duplicates,
-		policyNote(pol, filtered), budgetNote(stats.BudgetHit, cfg.Output.Budget))
-	return nil
+	// Feeder: hand tokens to workers, stopping early if the consumer signals.
+	go func() {
+		defer close(jobs)
+		for _, t := range toks {
+			select {
+			case jobs <- t:
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	// Workers: pure mutation + policy work, no shared mutable state.
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for t := range jobs {
+				expanded := eng.Expand(t)
+				b := batch{cands: expanded[:0]}
+				for _, c := range expanded {
+					if pol.Active() && !pol.Allow(c) {
+						b.filtered++
+						continue
+					}
+					b.cands = append(b.cands, c)
+				}
+				select {
+				case results <- b:
+				case <-done:
+					return
+				}
+			}
+		}()
+	}
+	go func() { wg.Wait(); close(results) }()
+
+	// Consumer: the only goroutine touching the writer, so it stays single-
+	// threaded. Keep draining results after a stop so workers never block.
+	var filtered int
+	var writeErr error
+	for b := range results {
+		filtered += b.filtered
+		if writeErr != nil || w.BudgetReached() {
+			continue // drain remaining batches
+		}
+		for _, c := range b.cands {
+			accepted, err := w.Add(c)
+			if err != nil {
+				writeErr = err
+				stop()
+				break
+			}
+			if !accepted { // budget reached
+				stop()
+				break
+			}
+		}
+		if w.BudgetReached() {
+			stop()
+		}
+	}
+	return filtered, writeErr
 }
 
 // policyNote reports how many candidates the policy filter rejected, when active.
@@ -171,7 +319,7 @@ func policyNote(pol *policy.Filter, filtered int) string {
 // runRules is the headline feature: instead of materializing a giant wordlist,
 // it writes a small base wordlist (the combined tokens) plus a hashcat .rule
 // file that encodes the mutation set. hashcat expands base × rules on the fly.
-func runRules(cmd *cobra.Command, cfg *profile.Config) error {
+func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
 	wordPath := cfg.Output.File
 	if wordPath == "" {
 		wordPath = "pwprofiler.words"
@@ -190,7 +338,7 @@ func runRules(cmd *cobra.Command, cfg *profile.Config) error {
 		return fmt.Errorf("create wordlist %q: %w", wordPath, err)
 	}
 	defer wf.Close()
-	ww := output.New(wf, cfg.Output.Dedupe, cfg.Output.Budget)
+	ww := output.New(wf, buildDeduper(cfg, opts.dedup), cfg.Output.Budget)
 	for _, tok := range combined.Tokens {
 		if ok, err := ww.Add(tok); err != nil {
 			return err
@@ -267,6 +415,26 @@ func buildAffixes(cfg *profile.Config) (appendList, prependList []string) {
 		}
 	}
 	return appendList, prependList
+}
+
+// ratePerSec computes candidates emitted per second (0 for a zero duration).
+func ratePerSec(n int, d time.Duration) float64 {
+	if d <= 0 {
+		return 0
+	}
+	return float64(n) / d.Seconds()
+}
+
+// humanCount renders a count compactly (1234567 -> "1.2M").
+func humanCount(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM candidates", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fK candidates", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d candidates", n)
+	}
 }
 
 func budgetNote(hit bool, budget int) string {

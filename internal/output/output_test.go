@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/praneeth132006/Password-Profiler/internal/dedup"
 )
 
 func TestWriterBasic(t *testing.T) {
 	var buf bytes.Buffer
-	w := New(&buf, false, 0)
+	w := New(&buf, nil, 0)
 	for _, c := range []string{"a", "b", "c"} {
 		if ok, err := w.Add(c); err != nil || !ok {
 			t.Fatalf("Add(%q) = %v, %v", c, ok, err)
@@ -28,7 +30,7 @@ func TestWriterBasic(t *testing.T) {
 
 func TestWriterDedupe(t *testing.T) {
 	var buf bytes.Buffer
-	w := New(&buf, true, 0)
+	w := New(&buf, dedup.NewExact(), 0)
 	for _, c := range []string{"x", "x", "y", "x"} {
 		if _, err := w.Add(c); err != nil {
 			t.Fatalf("Add: %v", err)
@@ -48,7 +50,7 @@ func TestWriterDedupe(t *testing.T) {
 
 func TestWriterBudget(t *testing.T) {
 	var buf bytes.Buffer
-	w := New(&buf, false, 2)
+	w := New(&buf, nil, 2)
 	accepted := 0
 	for _, c := range []string{"a", "b", "c", "d"} {
 		ok, err := w.Add(c)
