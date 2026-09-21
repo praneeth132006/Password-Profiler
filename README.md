@@ -136,10 +136,15 @@ load time with a clear error.
     (`john1990`, `1990john`); numeric/symbol suffixes appended.
   - **Structural:** reverse, duplicate, truncate (`john` → `nhoj`, `johnjohn`,
     `joh`).
+- **Rule mode** (`internal/rules`): emit a small base wordlist + a hashcat
+  `.rule` file encoding the mutation set (case, leet, affixes, structural), so
+  hashcat expands `words × rules` on the fly instead of writing a giant list. A
+  built-in rule interpreter validates that every emitted rule parses and
+  produces its intended candidate.
 - **Buffered output** (`internal/output`): `bufio.Writer`, exact dedup, global
   budget cap, and a stats summary.
 
-Rule mode and policy filtering land in later phases (see Roadmap).
+Policy filtering and scale hardening land in later phases (see Roadmap).
 
 ## Cracking pipe examples
 
@@ -156,8 +161,18 @@ pwprofiler generate -c profile.yaml -o candidates.txt
 john --wordlist=candidates.txt --format=raw-md5 hashes.txt
 ```
 
-> Rule mode (`--mode rules`) — a small base wordlist plus a generated hashcat
-> `.rule` file for `hashcat -r` — arrives in Phase 4.
+**Rule mode** (`--mode rules`) — the headline feature. Writes a small base
+wordlist plus a hashcat `.rule` file instead of a giant materialized list:
+
+```bash
+pwprofiler generate -c profile.yaml --mode rules -o base.words
+# -> writes base.words + base.rule, and prints the command to run:
+hashcat -a 0 -m <hash-type> hashes.txt base.words -r base.rule
+```
+
+The `.rule` file uses standard hashcat functions (`:`, `l`, `u`, `c`, `sa@`,
+`$1$2$3`, `^0^9^9^1`, `r`, `d`, `]`), each validated by the built-in interpreter
+in [`internal/rules`](internal/rules/apply.go).
 
 ## Project layout
 
@@ -169,6 +184,7 @@ pwprofiler/
 │   ├── tokens/          # profile -> base tokens
 │   ├── combine/         # join tokens (singles + bounded concatenations)
 │   ├── mutate/          # composable transform engine
+│   ├── rules/           # hashcat .rule emitter + validating interpreter
 │   └── output/          # buffered, deduped, budget-capped sink
 ├── testdata/            # sample config
 ├── go.mod
@@ -192,7 +208,7 @@ Every `internal/` package ships table-driven tests. `go build ./...` and
 - [x] **Phase 1 — MVP:** config → tokens → case + suffix mutations → wordlist.
 - [x] **Phase 2 — Combination engine:** separators + `max_combine` cap.
 - [x] **Phase 3 — Full mutation engine:** leet, affix years, structural, depth chaining.
-- [ ] **Phase 4 — Rule mode:** hashcat `.rule` emitter.
+- [x] **Phase 4 — Rule mode:** hashcat `.rule` emitter.
 - [ ] **Phase 5 — Policy filter.**
 - [ ] **Phase 6 — Scale hardening:** scalable dedup, worker pool, keyspace stats.
 - [ ] **Phase 7 — (Optional) crawler:** CeWL-style keyword harvesting (isolated).

@@ -9,12 +9,15 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/praneeth132006/Password-Profiler/internal/combine"
 	"github.com/praneeth132006/Password-Profiler/internal/mutate"
 	"github.com/praneeth132006/Password-Profiler/internal/output"
 	"github.com/praneeth132006/Password-Profiler/internal/profile"
+	"github.com/praneeth132006/Password-Profiler/internal/rules"
 	"github.com/praneeth132006/Password-Profiler/internal/tokens"
 	"github.com/spf13/cobra"
 )
@@ -76,10 +79,18 @@ func newGenerateCmd() *cobra.Command {
 
 // runGenerate executes the Phase 1 pipeline: tokens -> mutate -> buffered output.
 func runGenerate(cmd *cobra.Command, cfg *profile.Config) error {
-	if cfg.Output.Mode == "rules" {
-		return fmt.Errorf("output mode %q is not implemented yet (arrives in Phase 4); run with --mode wordlist", cfg.Output.Mode)
+	switch cfg.Output.Mode {
+	case "wordlist":
+		return runWordlist(cmd, cfg)
+	case "rules":
+		return runRules(cmd, cfg)
+	default:
+		return fmt.Errorf("output.mode %q: must be wordlist|rules", cfg.Output.Mode)
 	}
+}
 
+// runWordlist runs the full pipeline and writes every candidate.
+func runWordlist(cmd *cobra.Command, cfg *profile.Config) error {
 	// Resolve the destination: a file, or stdout. Candidates go to the sink;
 	// the stats summary always goes to stderr so a stdout pipe stays clean.
 	var sink *os.File
@@ -136,6 +147,79 @@ func runGenerate(cmd *cobra.Command, cfg *profile.Config) error {
 		len(base), combined.Describe(), stats.Emitted, stats.Duplicates,
 		budgetNote(stats.BudgetHit, cfg.Output.Budget))
 	return nil
+}
+
+// runRules is the headline feature: instead of materializing a giant wordlist,
+// it writes a small base wordlist (the combined tokens) plus a hashcat .rule
+// file that encodes the mutation set. hashcat expands base × rules on the fly.
+func runRules(cmd *cobra.Command, cfg *profile.Config) error {
+	wordPath := cfg.Output.File
+	if wordPath == "" {
+		wordPath = "pwprofiler.words"
+	}
+	rulePath := deriveRulePath(wordPath)
+
+	// Base wordlist: the combined tokens, buffered + deduped, budget-capped.
+	base := tokens.Extract(cfg.Profile)
+	combined := combine.Generate(base, combine.Config{
+		MaxCombine: cfg.Rules.MaxCombine,
+		Separators: cfg.Rules.Separators,
+		Limit:      cfg.Output.Budget,
+	})
+	wf, err := os.Create(wordPath)
+	if err != nil {
+		return fmt.Errorf("create wordlist %q: %w", wordPath, err)
+	}
+	defer wf.Close()
+	ww := output.New(wf, cfg.Output.Dedupe, cfg.Output.Budget)
+	for _, tok := range combined.Tokens {
+		if ok, err := ww.Add(tok); err != nil {
+			return err
+		} else if !ok {
+			break
+		}
+	}
+	wstats, err := ww.Flush()
+	if err != nil {
+		return err
+	}
+
+	// Rule file encoding the mutation set.
+	appendAffixes, prependAffixes := buildAffixes(cfg)
+	ruleSet := rules.Generate(rules.Config{
+		Cases:      cfg.Rules.Case,
+		Leet:       cfg.Rules.Leet,
+		Append:     appendAffixes,
+		Prepend:    prependAffixes,
+		Structural: true,
+	})
+	rf, err := os.Create(rulePath)
+	if err != nil {
+		return fmt.Errorf("create rule file %q: %w", rulePath, err)
+	}
+	defer rf.Close()
+	if _, err := ruleSet.WriteTo(rf); err != nil {
+		return err
+	}
+
+	// Report artifacts, estimated keyspace, and the hashcat invocation.
+	keyspace := int64(wstats.Emitted) * int64(ruleSet.Len())
+	out := cmd.ErrOrStderr()
+	fmt.Fprintf(out, "pwprofiler (rules mode):\n")
+	fmt.Fprintf(out, "  wordlist: %s  (%d words)%s\n", wordPath, wstats.Emitted,
+		budgetNote(wstats.BudgetHit, cfg.Output.Budget))
+	fmt.Fprintf(out, "  rules:    %s  (%d rules)\n", rulePath, ruleSet.Len())
+	fmt.Fprintf(out, "  estimated keyspace: ~%d candidates (words × rules)\n", keyspace)
+	fmt.Fprintf(out, "  run: hashcat -a 0 -m <hash-type> <hashes> %s -r %s\n", wordPath, rulePath)
+	return nil
+}
+
+// deriveRulePath turns a wordlist path into a sibling .rule path.
+func deriveRulePath(wordPath string) string {
+	if ext := filepath.Ext(wordPath); ext != "" {
+		return strings.TrimSuffix(wordPath, ext) + ".rule"
+	}
+	return wordPath + ".rule"
 }
 
 // buildAffixes assembles the append and prepend affix lists from config. Years

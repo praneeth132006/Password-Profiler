@@ -2,16 +2,37 @@ package mutate
 
 import "strings"
 
-// leetSubs maps a lowercase base rune to its leet substitutions, primary first.
-// The primary (index 0) is used by "partial" mode; "full" mode considers all.
-var leetSubs = map[rune][]rune{
-	'a': {'@', '4'},
-	'e': {'3'},
-	'i': {'1', '!'},
-	'o': {'0'},
-	's': {'$', '5'},
-	't': {'7'},
+// LeetPair is one lowercase base rune and its leet substitutions, primary first.
+type LeetPair struct {
+	Base rune
+	Subs []rune
 }
+
+// leetTable is the ordered, single source of truth for leet substitutions.
+// Order is fixed so rule generation and mutation are deterministic and agree.
+// The primary (index 0) is used by "partial" mode; "full" mode considers all.
+var leetTable = []LeetPair{
+	{'a', []rune{'@', '4'}},
+	{'e', []rune{'3'}},
+	{'i', []rune{'1', '!'}},
+	{'o', []rune{'0'}},
+	{'s', []rune{'$', '5'}},
+	{'t', []rune{'7'}},
+}
+
+// leetSubs is the map view of leetTable for O(1) lookup during mutation.
+var leetSubs = func() map[rune][]rune {
+	m := make(map[rune][]rune, len(leetTable))
+	for _, p := range leetTable {
+		m[p.Base] = p.Subs
+	}
+	return m
+}()
+
+// LeetTable returns the leet substitutions in deterministic order. Other
+// packages (e.g. rules) use it to encode the same substitutions as hashcat
+// rules.
+func LeetTable() []LeetPair { return leetTable }
 
 // defaultLeetCap bounds how many character positions "full" leet may substitute
 // in a single word. Leet is the fastest-exploding transform, so this cap is the
