@@ -92,13 +92,13 @@ profile:
 
 rules:
   case: [lower, capitalize, upper]   # identity|lower|upper|capitalize|toggle|invert
-  leet: partial                      # off | partial | full          (Phase 3)
+  leet: partial                      # off | partial | full
   separators: ["", ".", "_"]         # joined between combined tokens
   affixes:
-    years: {from_dob: true, extra: [2024, 2025]}   # (Phase 3)
-    suffixes: ["123", "!", "@", "01"]
+    years: {from_dob: true, extra: [2024, 2025]}   # appended + prepended
+    suffixes: ["123", "!", "@", "01"]              # appended
   max_combine: 2                     # max tokens joined into one combination
-  depth: 3                           # (Phase 3)
+  depth: 3                           # max chained mutations
 
 policy:                              # (Phase 5)
   min_len: 8
@@ -115,7 +115,7 @@ output:
 Unknown keys and malformed values (bad dates, invalid enums) are rejected at
 load time with a clear error.
 
-### What's implemented today (Phases 1–2)
+### What's implemented today (Phases 1–3)
 
 - **Config** parsing + validation (`internal/profile`).
 - **Token extraction** (`internal/tokens`): multi-word splitting
@@ -126,13 +126,20 @@ load time with a clear error.
   concatenations of distinct tokens across the separator set
   (`john` + `doe` → `johndoe`, `john.doe`, `john_doe`, `doejohn`, …), capped by
   `max_combine` and guarded against explosion by the budget.
-- **Mutations** (`internal/mutate`): case folding (lower/upper/capitalize/
-  toggle/invert) + suffix appending.
+- **Full mutation engine** (`internal/mutate`) — composable transforms chained
+  breadth-first up to `depth`:
+  - **Case:** identity, lower, UPPER, Capitalize, tOGGLE, iNVERT.
+  - **Leetspeak:** `off | partial | full`, e.g. `falcons` → `f@lc0n$`. `full`
+    is combinatorial and capped per word so it cannot explode.
+  - **Affixes:** year affixes derived from the DOB (±1 year) plus the current
+    year and explicit extras, in 4- and 2-digit forms, appended *and* prepended
+    (`john1990`, `1990john`); numeric/symbol suffixes appended.
+  - **Structural:** reverse, duplicate, truncate (`john` → `nhoj`, `johnjohn`,
+    `joh`).
 - **Buffered output** (`internal/output`): `bufio.Writer`, exact dedup, global
   budget cap, and a stats summary.
 
-Leetspeak, affix years, structural mutations, chaining depth, rule mode, and
-policy filtering land in later phases (see Roadmap).
+Rule mode and policy filtering land in later phases (see Roadmap).
 
 ## Cracking pipe examples
 
@@ -184,7 +191,7 @@ Every `internal/` package ships table-driven tests. `go build ./...` and
 
 - [x] **Phase 1 — MVP:** config → tokens → case + suffix mutations → wordlist.
 - [x] **Phase 2 — Combination engine:** separators + `max_combine` cap.
-- [ ] **Phase 3 — Full mutation engine:** leet, affix years, structural, depth chaining.
+- [x] **Phase 3 — Full mutation engine:** leet, affix years, structural, depth chaining.
 - [ ] **Phase 4 — Rule mode:** hashcat `.rule` emitter.
 - [ ] **Phase 5 — Policy filter.**
 - [ ] **Phase 6 — Scale hardening:** scalable dedup, worker pool, keyspace stats.

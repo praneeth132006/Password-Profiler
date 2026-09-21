@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/praneeth132006/Password-Profiler/internal/combine"
 	"github.com/praneeth132006/Password-Profiler/internal/mutate"
@@ -99,9 +100,14 @@ func runGenerate(cmd *cobra.Command, cfg *profile.Config) error {
 		Separators: cfg.Rules.Separators,
 		Limit:      cfg.Output.Budget, // guard against combination explosion
 	})
+	appendAffixes, prependAffixes := buildAffixes(cfg)
 	eng := mutate.NewEngine(mutate.Config{
-		Cases:    cfg.Rules.Case,
-		Suffixes: cfg.Rules.Affixes.Suffixes,
+		Cases:      cfg.Rules.Case,
+		Leet:       cfg.Rules.Leet,
+		Append:     appendAffixes,
+		Prepend:    prependAffixes,
+		Structural: true,
+		Depth:      cfg.Rules.Depth,
 	})
 	w := output.New(sink, cfg.Output.Dedupe, cfg.Output.Budget)
 
@@ -130,6 +136,34 @@ func runGenerate(cmd *cobra.Command, cfg *profile.Config) error {
 		len(base), combined.Describe(), stats.Emitted, stats.Duplicates,
 		budgetNote(stats.BudgetHit, cfg.Output.Budget))
 	return nil
+}
+
+// buildAffixes assembles the append and prepend affix lists from config. Years
+// (4- and 2-digit) are derived from the DOB and/or explicit extras; numeric and
+// symbol suffixes come straight from config. Years are also prepended (4-digit
+// only) since year prefixes are common ("1990john").
+func buildAffixes(cfg *profile.Config) (appendList, prependList []string) {
+	y := cfg.Rules.Affixes.Years
+	var years []string
+	switch {
+	case y.FromDOB:
+		var birthYear int
+		if t, err := time.Parse("2006-01-02", cfg.Profile.DOB); err == nil {
+			birthYear = t.Year()
+		}
+		years = mutate.YearAffixes(birthYear, birthYear > 0, time.Now().Year(), y.Extra)
+	case len(y.Extra) > 0:
+		years = mutate.YearAffixes(0, false, 0, y.Extra)
+	}
+
+	appendList = append(appendList, years...)
+	appendList = append(appendList, cfg.Rules.Affixes.Suffixes...)
+	for _, yr := range years {
+		if len(yr) == 4 {
+			prependList = append(prependList, yr)
+		}
+	}
+	return appendList, prependList
 }
 
 func budgetNote(hit bool, budget int) string {
