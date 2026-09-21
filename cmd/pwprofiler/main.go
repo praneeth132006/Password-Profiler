@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/praneeth132006/Password-Profiler/internal/combine"
 	"github.com/praneeth132006/Password-Profiler/internal/mutate"
 	"github.com/praneeth132006/Password-Profiler/internal/output"
 	"github.com/praneeth132006/Password-Profiler/internal/profile"
@@ -93,13 +94,18 @@ func runGenerate(cmd *cobra.Command, cfg *profile.Config) error {
 	}
 
 	base := tokens.Extract(cfg.Profile)
+	combined := combine.Generate(base, combine.Config{
+		MaxCombine: cfg.Rules.MaxCombine,
+		Separators: cfg.Rules.Separators,
+		Limit:      cfg.Output.Budget, // guard against combination explosion
+	})
 	eng := mutate.NewEngine(mutate.Config{
 		Cases:    cfg.Rules.Case,
 		Suffixes: cfg.Rules.Affixes.Suffixes,
 	})
 	w := output.New(sink, cfg.Output.Dedupe, cfg.Output.Budget)
 
-	for _, tok := range base {
+	for _, tok := range combined.Tokens {
 		for _, cand := range eng.Expand(tok) {
 			accepted, err := w.Add(cand)
 			if err != nil {
@@ -120,8 +126,9 @@ func runGenerate(cmd *cobra.Command, cfg *profile.Config) error {
 	}
 
 	fmt.Fprintf(cmd.ErrOrStderr(),
-		"pwprofiler: %d base tokens -> %d candidates emitted (%d duplicates suppressed)%s\n",
-		len(base), stats.Emitted, stats.Duplicates, budgetNote(stats.BudgetHit, cfg.Output.Budget))
+		"pwprofiler: %d base tokens -> %s -> %d candidates emitted (%d duplicates suppressed)%s\n",
+		len(base), combined.Describe(), stats.Emitted, stats.Duplicates,
+		budgetNote(stats.BudgetHit, cfg.Output.Budget))
 	return nil
 }
 

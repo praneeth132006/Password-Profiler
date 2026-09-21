@@ -93,11 +93,11 @@ profile:
 rules:
   case: [lower, capitalize, upper]   # identity|lower|upper|capitalize|toggle|invert
   leet: partial                      # off | partial | full          (Phase 3)
-  separators: ["", ".", "_"]         # (Phase 2)
+  separators: ["", ".", "_"]         # joined between combined tokens
   affixes:
     years: {from_dob: true, extra: [2024, 2025]}   # (Phase 3)
     suffixes: ["123", "!", "@", "01"]
-  max_combine: 2                     # (Phase 2)
+  max_combine: 2                     # max tokens joined into one combination
   depth: 3                           # (Phase 3)
 
 policy:                              # (Phase 5)
@@ -115,20 +115,24 @@ output:
 Unknown keys and malformed values (bad dates, invalid enums) are rejected at
 load time with a clear error.
 
-### What Phase 1 implements today
+### What's implemented today (Phases 1–2)
 
 - **Config** parsing + validation (`internal/profile`).
 - **Token extraction** (`internal/tokens`): multi-word splitting
   (`"Acme Corp"` → `acme`, `corp`, `acmecorp`, `acme_corp`), date decomposition
   (`1990-05-12` → `1990`, `90`, `05`, `12`, `0512`, `12051990`, …), domain
   labels, deterministic and de-duplicated output.
+- **Combination engine** (`internal/combine`): singles plus bounded ordered
+  concatenations of distinct tokens across the separator set
+  (`john` + `doe` → `johndoe`, `john.doe`, `john_doe`, `doejohn`, …), capped by
+  `max_combine` and guarded against explosion by the budget.
 - **Mutations** (`internal/mutate`): case folding (lower/upper/capitalize/
   toggle/invert) + suffix appending.
 - **Buffered output** (`internal/output`): `bufio.Writer`, exact dedup, global
   budget cap, and a stats summary.
 
-Combination joins, leetspeak, affix years, structural mutations, chaining
-depth, rule mode, and policy filtering land in later phases (see Roadmap).
+Leetspeak, affix years, structural mutations, chaining depth, rule mode, and
+policy filtering land in later phases (see Roadmap).
 
 ## Cracking pipe examples
 
@@ -156,6 +160,7 @@ pwprofiler/
 ├── internal/
 │   ├── profile/         # YAML config parse + validate
 │   ├── tokens/          # profile -> base tokens
+│   ├── combine/         # join tokens (singles + bounded concatenations)
 │   ├── mutate/          # composable transform engine
 │   └── output/          # buffered, deduped, budget-capped sink
 ├── testdata/            # sample config
@@ -178,7 +183,7 @@ Every `internal/` package ships table-driven tests. `go build ./...` and
 ## Roadmap
 
 - [x] **Phase 1 — MVP:** config → tokens → case + suffix mutations → wordlist.
-- [ ] **Phase 2 — Combination engine:** separators + `max_combine` cap.
+- [x] **Phase 2 — Combination engine:** separators + `max_combine` cap.
 - [ ] **Phase 3 — Full mutation engine:** leet, affix years, structural, depth chaining.
 - [ ] **Phase 4 — Rule mode:** hashcat `.rule` emitter.
 - [ ] **Phase 5 — Policy filter.**
