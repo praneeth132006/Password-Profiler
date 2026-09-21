@@ -8,6 +8,9 @@ reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- **Phase 5 — Policy filter** (`internal/policy`): drop candidates that can't
+  satisfy the target policy (min/max length, required character classes) before
+  they reach the output; the stats line reports how many were rejected.
 - **Phase 4 — Rule mode** (`internal/rules`): emit a small base wordlist plus a
   hashcat `.rule` file encoding the mutation set, with a self-contained rule
   interpreter that validates every emitted rule produces its intended
@@ -29,4 +32,4 @@ reaches 1.0.
   and pull-request templates, and a GitHub Actions CI workflow.
 
 ### Notes
-- No policy filtering or scale hardening yet (Phases 5–6).
+- No scale hardening yet (Phase 6).

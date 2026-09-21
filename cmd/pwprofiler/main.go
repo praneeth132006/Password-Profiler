@@ -16,6 +16,7 @@ import (
 	"github.com/praneeth132006/Password-Profiler/internal/combine"
 	"github.com/praneeth132006/Password-Profiler/internal/mutate"
 	"github.com/praneeth132006/Password-Profiler/internal/output"
+	"github.com/praneeth132006/Password-Profiler/internal/policy"
 	"github.com/praneeth132006/Password-Profiler/internal/profile"
 	"github.com/praneeth132006/Password-Profiler/internal/rules"
 	"github.com/praneeth132006/Password-Profiler/internal/tokens"
@@ -120,10 +121,20 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config) error {
 		Structural: true,
 		Depth:      cfg.Rules.Depth,
 	})
+	pol := policy.New(policy.Policy{
+		MinLen:  cfg.Policy.MinLen,
+		MaxLen:  cfg.Policy.MaxLen,
+		Require: cfg.Policy.Require,
+	})
 	w := output.New(sink, cfg.Output.Dedupe, cfg.Output.Budget)
 
+	var filtered int
 	for _, tok := range combined.Tokens {
 		for _, cand := range eng.Expand(tok) {
+			if pol.Active() && !pol.Allow(cand) {
+				filtered++
+				continue
+			}
 			accepted, err := w.Add(cand)
 			if err != nil {
 				return err
@@ -143,10 +154,18 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config) error {
 	}
 
 	fmt.Fprintf(cmd.ErrOrStderr(),
-		"pwprofiler: %d base tokens -> %s -> %d candidates emitted (%d duplicates suppressed)%s\n",
+		"pwprofiler: %d base tokens -> %s -> %d candidates emitted (%d duplicates suppressed%s)%s\n",
 		len(base), combined.Describe(), stats.Emitted, stats.Duplicates,
-		budgetNote(stats.BudgetHit, cfg.Output.Budget))
+		policyNote(pol, filtered), budgetNote(stats.BudgetHit, cfg.Output.Budget))
 	return nil
+}
+
+// policyNote reports how many candidates the policy filter rejected, when active.
+func policyNote(pol *policy.Filter, filtered int) string {
+	if !pol.Active() {
+		return ""
+	}
+	return fmt.Sprintf(", %d rejected by policy", filtered)
 }
 
 // runRules is the headline feature: instead of materializing a giant wordlist,

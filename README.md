@@ -100,13 +100,13 @@ rules:
   max_combine: 2                     # max tokens joined into one combination
   depth: 3                           # max chained mutations
 
-policy:                              # (Phase 5)
+policy:                              # emit only candidates that satisfy this
   min_len: 8
   max_len: 16
-  require: [upper, lower, digit]
+  require: [upper, lower, digit]     # upper | lower | digit | special
 
 output:
-  mode: wordlist                     # wordlist | rules (rules => Phase 4)
+  mode: wordlist                     # wordlist | rules
   file: ""                           # empty => stdout
   budget: 5000000                    # global hard cap on candidates
   dedupe: true
@@ -115,7 +115,7 @@ output:
 Unknown keys and malformed values (bad dates, invalid enums) are rejected at
 load time with a clear error.
 
-### What's implemented today (Phases 1–3)
+### What's implemented today (Phases 1–5)
 
 - **Config** parsing + validation (`internal/profile`).
 - **Token extraction** (`internal/tokens`): multi-word splitting
@@ -141,10 +141,14 @@ load time with a clear error.
   hashcat expands `words × rules` on the fly instead of writing a giant list. A
   built-in rule interpreter validates that every emitted rule parses and
   produces its intended candidate.
+- **Policy filter** (`internal/policy`): drop candidates that can't satisfy the
+  target policy — min/max length and required character classes (upper, lower,
+  digit, special) — shrinking the keyspace before it reaches the cracker. The
+  stats line reports how many candidates the policy rejected.
 - **Buffered output** (`internal/output`): `bufio.Writer`, exact dedup, global
   budget cap, and a stats summary.
 
-Policy filtering and scale hardening land in later phases (see Roadmap).
+Scale hardening lands in Phase 6 (see Roadmap).
 
 ## Cracking pipe examples
 
@@ -184,6 +188,7 @@ pwprofiler/
 │   ├── tokens/          # profile -> base tokens
 │   ├── combine/         # join tokens (singles + bounded concatenations)
 │   ├── mutate/          # composable transform engine
+│   ├── policy/          # filter by length + required character classes
 │   ├── rules/           # hashcat .rule emitter + validating interpreter
 │   └── output/          # buffered, deduped, budget-capped sink
 ├── testdata/            # sample config
@@ -209,7 +214,7 @@ Every `internal/` package ships table-driven tests. `go build ./...` and
 - [x] **Phase 2 — Combination engine:** separators + `max_combine` cap.
 - [x] **Phase 3 — Full mutation engine:** leet, affix years, structural, depth chaining.
 - [x] **Phase 4 — Rule mode:** hashcat `.rule` emitter.
-- [ ] **Phase 5 — Policy filter.**
+- [x] **Phase 5 — Policy filter.**
 - [ ] **Phase 6 — Scale hardening:** scalable dedup, worker pool, keyspace stats.
 - [ ] **Phase 7 — (Optional) crawler:** CeWL-style keyword harvesting (isolated).
 
