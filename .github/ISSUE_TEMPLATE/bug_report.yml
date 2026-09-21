@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a problem with pwprofiler
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! Please do **not** include real targets' personal
+        data or real hashes. Use the fictional sample config or redacted values.
+        For security vulnerabilities, follow SECURITY.md instead of this form.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Include the command you ran and a minimal (redacted) config.
+      placeholder: |
+        1. config used (redact personal data)
+        2. `pwprofiler generate -c config.yaml ...`
+        3. observed vs expected output
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `pwprofiler --version` or the git commit.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS and Go version
+      placeholder: "macOS 14 / go1.23"
+    validations:
+      required: true

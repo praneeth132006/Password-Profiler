@@ -213,6 +213,20 @@ Every `internal/` package ships table-driven tests. `go build ./...` and
 - [ ] **Phase 6 — Scale hardening:** scalable dedup, worker pool, keyspace stats.
 - [ ] **Phase 7 — (Optional) crawler:** CeWL-style keyword harvesting (isolated).
 
+## Contributing
+
+Contributions are welcome — please read [CONTRIBUTING.md](./CONTRIBUTING.md)
+first. All participants are expected to follow our
+[Code of Conduct](./CODE_OF_CONDUCT.md). Changes are validated by CI (gofmt,
+`go vet`, build, `go test -race`, and a `go mod tidy` check).
+
+## Security
+
+Found a vulnerability in `pwprofiler` itself? Please report it privately per
+[SECURITY.md](./SECURITY.md) rather than opening a public issue. And remember:
+this tool is for **authorized testing only**.
+
 ## License
 
 Licensed under the [Apache License 2.0](./LICENSE).
+

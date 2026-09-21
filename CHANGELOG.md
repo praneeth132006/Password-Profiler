@@ -1,0 +1,32 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
+to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it
+reaches 1.0.
+
+## [Unreleased]
+
+### Added
+- **Phase 4 — Rule mode** (`internal/rules`): emit a small base wordlist plus a
+  hashcat `.rule` file encoding the mutation set, with a self-contained rule
+  interpreter that validates every emitted rule produces its intended
+  candidate. `--mode rules` reports artifacts and estimated keyspace.
+- **Phase 3 — Full mutation engine** (`internal/mutate`): leetspeak
+  (`off|partial|full`, capped), year affixes derived from DOB ± range + current
+  year + extras (appended and prepended), structural mutations
+  (reverse/duplicate/truncate), and depth-bounded chaining of composable
+  transforms.
+- **Phase 2 — Combination engine** (`internal/combine`): singles plus bounded
+  ordered concatenations of distinct tokens across a separator set, capped by
+  `max_combine` and guarded by the budget.
+- **Phase 1 — MVP**: YAML config parsing/validation (`internal/profile`), token
+  extraction with multi-word splitting and date decomposition
+  (`internal/tokens`), case + suffix mutations, and a buffered, de-duplicated,
+  budget-capped output sink (`internal/output`) behind a cobra CLI.
+- Open-source scaffolding: README with authorized-use notice, `LICENSE`
+  (Apache-2.0), `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue
+  and pull-request templates, and a GitHub Actions CI workflow.
+
+### Notes
+- No policy filtering or scale hardening yet (Phases 5–6).

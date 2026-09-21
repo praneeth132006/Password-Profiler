@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an idea for pwprofiler
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Note that pwprofiler is an authorized-testing
+        tool — proposals must serve legitimate password-audit / pentest
+        workflows (see CONTRIBUTING.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The use case or gap you've run into.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like pwprofiler to do. Config/CLI sketch welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or existing tools you looked at.
+    validations:
+      required: false
