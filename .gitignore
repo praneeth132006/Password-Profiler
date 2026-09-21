@@ -1,0 +1,13 @@
+# Binaries
+/pwprofiler
+/dist/
+*.exe
+
+# Test / scratch output
+*.out
+out.txt
+/testdata/*.generated
+
+# OS / editor cruft
+.DS_Store
+*.swp

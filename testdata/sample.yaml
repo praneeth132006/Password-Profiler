@@ -1,0 +1,33 @@
+# pwprofiler sample config — AUTHORIZED TESTING ONLY.
+# This profile is fictional and exists to demonstrate the pipeline.
+profile:
+  first_name: John
+  last_name: Doe
+  nickname: JD
+  dob: 1990-05-12
+  partner: Jane
+  pets: [rex, milo]
+  company: Acme Corp
+  domain: acme.com
+  keywords: [falcons, chess]
+
+rules:
+  case: [lower, capitalize, upper]
+  leet: partial            # off | partial | full
+  separators: ["", ".", "_"]
+  affixes:
+    years: {from_dob: true, extra: [2024, 2025]}
+    suffixes: ["123", "!", "@", "01"]
+  max_combine: 2
+  depth: 3
+
+policy:
+  min_len: 8
+  max_len: 16
+  require: [upper, lower, digit]
+
+output:
+  mode: wordlist           # wordlist | rules  (rules mode arrives in Phase 4)
+  file: ""                 # empty => stdout
+  budget: 5000000
+  dedupe: true
