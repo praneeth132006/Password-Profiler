@@ -11,3 +11,8 @@ out.txt
 # OS / editor cruft
 .DS_Store
 *.swp
+
+# Local audit artifacts
+/passwords.txt
+/report.json
+*.session.json

@@ -111,6 +111,29 @@ restrictive policies may yield fewer or zero matches. Zero matches return an
 error instead of leaving an empty file. File output refuses to overwrite
 existing files and uses owner-only permissions on Unix.
 
+## Reusable policies, sessions and verification
+
+- **Advanced policies:** exact password blocklists, forbidden characters,
+  maximum UTF-8 bytes and consecutive-repeat limits, available in YAML, CLI,
+  console and the browser's Advanced policy section.
+- **Streaming check:** validate an existing wordlist against a policy, producing
+  aggregate JSON counts without including passwords.
+- **Saved sessions:** `save session.json` and `load session.json` preserve loaded
+  inputs and options in the console. These are private plaintext files.
+- **Preflight:** `validate --config profile.yaml` checks configuration without
+  generating passwords or touching output files.
+- **Browser cancellation:** cancel an in-flight generation while keeping inputs.
+
+```bash
+./pwprofiler files -i words.txt --policy testdata/policy.yaml -o passwords.txt
+./pwprofiler check -i passwords.txt --policy testdata/policy.yaml --fail-on-reject
+./pwprofiler validate -c testdata/sample.yaml
+```
+
+See [policy and workflow documentation](docs/POLICIES.md) for exact semantics,
+report fields, session privacy, examples, limitations and research references.
+Policy compliance is not a password-strength guarantee.
+
 ## Debian / Ubuntu installation
 
 On Debian/Ubuntu with Go and `dpkg-dev` installed, build a local package:
@@ -118,7 +141,7 @@ On Debian/Ubuntu with Go and `dpkg-dev` installed, build a local package:
 ```bash
 make deb                                  # amd64 by default
 ARCH=arm64 make deb                       # optional ARM64 package
-sudo apt install ./dist/pwprofiler_0.2.0_amd64.deb
+sudo apt install ./dist/pwprofiler_0.3.0_amd64.deb
 pwprofiler console
 pwprofiler serve
 ```

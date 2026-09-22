@@ -4,6 +4,9 @@ const form = document.getElementById("form"),
   statusText = document.getElementById("status"),
   download = document.getElementById("download");
 let objectURL;
+let controller;
+const cancel = document.getElementById("cancel");
+cancel.addEventListener("click", () => controller?.abort());
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   result.hidden = false;
@@ -19,6 +22,8 @@ form.addEventListener("submit", async (event) => {
     statusText.textContent = "Minimum length cannot exceed maximum length.";
     return;
   }
+  controller = new AbortController();
+  cancel.hidden = false;
   button.disabled = true;
   button.textContent = "Generating…";
   statusText.textContent =
@@ -28,6 +33,7 @@ form.addEventListener("submit", async (event) => {
       method: "POST",
       headers: { "X-Pwprofiler": "local" },
       body: data,
+      signal: controller.signal,
     });
     if (!response.ok) throw new Error(await response.text());
     const blob = await response.blob();
@@ -48,9 +54,13 @@ form.addEventListener("submit", async (event) => {
   } catch (error) {
     result.classList.add("error");
     statusText.textContent =
-      error.message ||
-      "Generation failed. Check that the local server is running.";
+      error.name === "AbortError"
+        ? "Generation cancelled. Your inputs are ready to edit."
+        : error.message ||
+          "Generation failed. Check that the local server is running.";
   } finally {
+    cancel.hidden = true;
+    controller = null;
     button.disabled = false;
     button.textContent = "Generate wordlist →";
   }

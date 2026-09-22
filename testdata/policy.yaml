@@ -1,0 +1,10 @@
+# Example of an existing organization's policy, not a password-strength recommendation.
+min_len: 8
+max_len: 64
+require: [upper, lower, digit, special]
+max_bytes: 0                # 0 disables the UTF-8 byte limit
+max_repeat: 3               # maximum consecutive identical Unicode characters
+forbidden: "<>"
+blocklist:                 # exact, case-sensitive full-password matches
+  - "Northstar123!"
+  - "Password123!"

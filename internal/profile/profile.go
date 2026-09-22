@@ -7,6 +7,7 @@ package profile
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -59,9 +60,13 @@ type Years struct {
 
 // Policy is the target password policy candidates must satisfy (Phase 5).
 type Policy struct {
-	MinLen  int      `yaml:"min_len"`
-	MaxLen  int      `yaml:"max_len"`
-	Require []string `yaml:"require"` // upper | lower | digit | special
+	MaxBytes  int      `yaml:"max_bytes"`
+	MaxRepeat int      `yaml:"max_repeat"`
+	Forbidden string   `yaml:"forbidden"`
+	Blocklist []string `yaml:"blocklist"`
+	MinLen    int      `yaml:"min_len"`
+	MaxLen    int      `yaml:"max_len"`
+	Require   []string `yaml:"require"` // upper | lower | digit | special
 }
 
 // Output controls where and how candidates are emitted.
@@ -90,6 +95,9 @@ func Parse(raw []byte) (*Config, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return nil, fmt.Errorf("config must contain exactly one YAML document")
 	}
 	cfg.applyDefaults()
 	if err := cfg.validate(); err != nil {
@@ -158,6 +166,9 @@ func (c *Config) validate() error {
 	if c.Rules.Depth < 1 {
 		return fmt.Errorf("rules.depth %d: must be >= 1", c.Rules.Depth)
 	}
+	if c.Policy.MaxBytes < 0 || c.Policy.MaxRepeat < 0 {
+		return fmt.Errorf("policy.max_bytes and policy.max_repeat must be nonnegative")
+	}
 	if c.Policy.MinLen < 0 || c.Policy.MaxLen < 0 {
 		return fmt.Errorf("policy lengths must be >= 0")
 	}
@@ -178,4 +189,20 @@ func (p Profile) isEmpty() bool {
 	return p.FirstName == "" && p.LastName == "" && p.Nickname == "" &&
 		p.DOB == "" && p.Partner == "" && p.Company == "" && p.Domain == "" &&
 		len(p.Pets) == 0 && len(p.Keywords) == 0
+}
+
+// ParsePolicy loads a standalone policy document with the same strict validation as a config.
+func ParsePolicy(raw []byte) (Policy, error) {
+	var p Policy
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&p); err != nil {
+		return p, fmt.Errorf("parse policy: %w", err)
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return p, fmt.Errorf("policy must contain exactly one YAML document")
+	}
+	cfg := Config{Profile: Profile{Keywords: []string{"validation"}}, Policy: p}
+	cfg.applyDefaults()
+	return p, cfg.validate()
 }

@@ -267,3 +267,32 @@ footer {
     flex-direction: column;
   }
 }
+
+.advanced {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+summary {
+  cursor: pointer;
+}
+input[type="text"] {
+  width: 100%;
+  border: 1px solid #46504b;
+  border-radius: 7px;
+  background: #111719;
+  color: var(--text);
+  font: 14px system-ui;
+  padding: 11px;
+  margin-top: 6px;
+}
+.secondary {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}

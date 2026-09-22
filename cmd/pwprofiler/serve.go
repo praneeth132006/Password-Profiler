@@ -128,6 +128,21 @@ func webHandler(host string) http.Handler {
 				return
 			}
 		}
+		for key, dest := range map[string]*int{"max_bytes": &s.MaxBytes, "max_repeat": &s.MaxRepeat} {
+			if value := r.FormValue(key); value != "" {
+				*dest, err = strconv.Atoi(value)
+				if err != nil {
+					http.Error(w, "Invalid "+key, 400)
+					return
+				}
+			}
+		}
+		s.Forbidden = r.FormValue("forbidden")
+		for _, word := range strings.Split(strings.ReplaceAll(r.FormValue("blocklist"), "\r\n", "\n"), "\n") {
+			if word != "" {
+				s.Blocklist = append(s.Blocklist, word)
+			}
+		}
 		s.Require = r.MultipartForm.Value["require"]
 		for _, kind := range []string{"emails", "names", "companies", "keywords"} {
 			for _, header := range r.MultipartForm.File[kind] {

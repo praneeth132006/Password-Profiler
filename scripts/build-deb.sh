@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build on Linux with dpkg-deb. Cross-compiles the self-contained Go binary.
 set -eu
-VERSION=${VERSION:-0.2.0}
+VERSION=${VERSION:-0.3.0}
 ARCH=${ARCH:-amd64}
 case "$ARCH" in amd64|arm64) ;; *) echo 'ARCH must be amd64 or arm64' >&2; exit 1;; esac
 case "$VERSION" in ''|*[!0-9A-Za-z.+:~-]*) echo 'Invalid VERSION' >&2; exit 1;; esac

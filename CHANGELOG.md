@@ -7,6 +7,23 @@ reaches 1.0.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-22
+
+### Added
+- Shared advanced policies: exact blocklists, forbidden characters, UTF-8 byte limits and consecutive repeat limits.
+- Standalone policy YAML accepted by `files --policy` and the console's `policy` command.
+- Streaming `check` command with aggregate JSON reports and optional failing exit status.
+- `validate` command for generation-config preflight without output side effects.
+- Versioned, validated console session save/load with private file permissions.
+- Browser advanced-policy controls and generation cancellation.
+- Policy/workflow reference documentation with NIST and OWASP research sources.
+
+### Fixed
+- Reject multiple YAML documents rather than silently ignoring trailing documents.
+- Apply every policy constraint consistently, including rules-mode incompatibility checks.
+
+## [0.2.0] - 2026-09-22
+
 ### Added
 - Localhost browser workspace with multi-file upload, policy controls, preview and text download.
 - Interactive `console` (also the default command), categorized file inputs, editable policy and session review.

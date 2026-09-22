@@ -66,3 +66,33 @@ func TestIsSpecial(t *testing.T) {
 		}
 	}
 }
+
+func TestExtendedPolicyReasons(t *testing.T) {
+	cases := []struct {
+		name         string
+		p            Policy
+		word, reason string
+	}{
+		{"exact blocklist", Policy{Blocklist: []string{"Northstar1!"}}, "Northstar1!", "blocklisted"},
+		{"not a substring", Policy{Blocklist: []string{"Northstar"}}, "Northstar1!", ""},
+		{"case sensitive", Policy{Blocklist: []string{"Northstar1!"}}, "northstar1!", ""},
+		{"utf8 bytes", Policy{MaxBytes: 3}, "éé", "max_bytes"},
+		{"unicode length", Policy{MinLen: 2, MaxLen: 2}, "éé", ""},
+		{"repeat run", Policy{MaxRepeat: 2}, "aBBB1!", "max_repeat"},
+		{"nonconsecutive repeats", Policy{MaxRepeat: 1}, "abab", ""},
+		{"unicode repeat", Policy{MaxRepeat: 2}, "界界界", "max_repeat"},
+		{"forbidden rune", Policy{Forbidden: "<>界"}, "x界", "forbidden_character"},
+		{"invalid utf8", Policy{}, string([]byte{255}), "invalid_utf8"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			f := New(tt.p)
+			if got := f.Reason(tt.word); got != tt.reason {
+				t.Fatalf("got %q want %q", got, tt.reason)
+			}
+			if f.Allow(tt.word) != (tt.reason == "") {
+				t.Fatal("Allow and Reason disagree")
+			}
+		})
+	}
+}

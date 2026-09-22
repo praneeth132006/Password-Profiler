@@ -42,6 +42,7 @@ keep new logic inside the stage it belongs to rather than in `cmd/`.
 
 ## Standards (a change is not "done" until these pass)
 
+- **Documented:** update README command examples, `docs/POLICIES.md` for policy/workflow semantics, and CHANGELOG for every user-visible change. Keep limitations and research references explicit; do not claim policy compliance measures password strength.
 - **Formatted:** `gofmt -l .` reports nothing. Run `make fmt`.
 - **Vetted:** `go vet ./...` is clean.
 - **Builds:** `go build ./...` succeeds.

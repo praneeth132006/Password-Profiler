@@ -153,8 +153,50 @@
               Unique candidates, capped at your limit. Case variations,
               leetspeak and common suffixes are included.
             </div>
+            <details class="advanced">
+              <summary>Advanced policy</summary>
+              <div class="row">
+                <label class="field"
+                  >Maximum UTF-8 bytes<input
+                    type="number"
+                    name="max_bytes"
+                    min="0"
+                    value="0"
+                /></label>
+                <label class="field"
+                  >Maximum repeated characters<input
+                    type="number"
+                    name="max_repeat"
+                    min="0"
+                    value="0"
+                /></label>
+              </div>
+              <div class="note">
+                0 disables either limit. Repeats count consecutive identical
+                characters.
+              </div>
+              <label class="field"
+                >Forbidden characters<input
+                  type="text"
+                  name="forbidden"
+                  placeholder="e.g. &lt;&gt;"
+              /></label>
+              <label class="field"
+                >Blocked passwords<textarea
+                  name="blocklist"
+                  placeholder="One exact password per line"
+                ></textarea>
+              </label>
+              <div class="note">
+                Blocklist matches are case-sensitive and compare the whole
+                password. Policy compliance does not measure password strength.
+              </div>
+            </details>
             <button class="primary" id="generate" type="submit">
               Generate wordlist →
+            </button>
+            <button id="cancel" class="secondary" type="button" hidden>
+              Cancel generation
             </button>
             <div class="note">
               Inputs are processed locally and are not saved by the server.

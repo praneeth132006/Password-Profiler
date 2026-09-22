@@ -53,13 +53,15 @@ jobs:
         with:
           go-version: stable
       - run: make deb
-      - run: sudo apt-get install -y ./dist/pwprofiler_0.2.0_amd64.deb
+      - run: sudo apt-get install -y ./dist/pwprofiler_*_amd64.deb
       - name: Verify installed CLI and embedded UI
         run: |
           pwprofiler --version
           printf 'Northstar\n' > /tmp/words.txt
           pwprofiler files -i /tmp/words.txt -o /tmp/passwords.txt
           test -s /tmp/passwords.txt
+          pwprofiler check -i /tmp/passwords.txt --policy testdata/policy.yaml --report /tmp/report.json
+          pwprofiler validate -c testdata/sample.yaml
           pwprofiler serve --port 8187 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -21,13 +22,17 @@ const maxInputLines = 2000
 
 // A session is shared by the console, file CLI and browser. File contents stay local.
 type session struct {
-	Keywords []string
-	Sources  []string
-	Min      int
-	Max      int
-	Require  []string
-	Budget   int
-	Output   string
+	MaxBytes  int
+	MaxRepeat int
+	Forbidden string
+	Blocklist []string
+	Keywords  []string
+	Sources   []string
+	Min       int
+	Max       int
+	Require   []string
+	Budget    int
+	Output    string
 }
 
 func newSession() *session {
@@ -99,10 +104,10 @@ func (s *session) config() (*profile.Config, error) {
 	if s.Budget < 1 || s.Budget > 100000 {
 		return nil, fmt.Errorf("budget must be between 1 and 100000")
 	}
-	if s.Min < 0 || s.Max < 1 || s.Max > 128 {
-		return nil, fmt.Errorf("minimum must be nonnegative and maximum must be 1–128")
+	if s.Min < 0 || s.Max < 0 || s.Max > 128 {
+		return nil, fmt.Errorf("minimum must be nonnegative and maximum must be 0–128 (0 is unlimited)")
 	}
-	cfg := profile.Config{Profile: profile.Profile{Keywords: s.Keywords}, Rules: profile.Rules{Case: []string{"lower", "capitalize", "upper"}, Leet: "partial", MaxCombine: 1, Depth: 2, Affixes: profile.Affixes{Suffixes: []string{"1!", "123!", strconv.Itoa(time.Now().Year()) + "!", "!", "123"}}}, Policy: profile.Policy{MinLen: s.Min, MaxLen: s.Max, Require: s.Require}, Output: profile.Output{Mode: "wordlist", File: s.Output, Budget: s.Budget, Dedupe: true}}
+	cfg := profile.Config{Profile: profile.Profile{Keywords: s.Keywords}, Rules: profile.Rules{Case: []string{"lower", "capitalize", "upper"}, Leet: "partial", MaxCombine: 1, Depth: 2, Affixes: profile.Affixes{Suffixes: []string{"1!", "123!", strconv.Itoa(time.Now().Year()) + "!", "!", "123"}}}, Policy: profile.Policy{MinLen: s.Min, MaxLen: s.Max, Require: s.Require, MaxBytes: s.MaxBytes, MaxRepeat: s.MaxRepeat, Forbidden: s.Forbidden, Blocklist: s.Blocklist}, Output: profile.Output{Mode: "wordlist", File: s.Output, Budget: s.Budget, Dedupe: true}}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return nil, err
@@ -123,6 +128,7 @@ func (s *session) run(cmd *cobra.Command) error {
 func newFilesCmd() *cobra.Command {
 	s := newSession()
 	var files, emails, names, companies []string
+	var policyPath string
 	cmd := &cobra.Command{Use: "files", Short: "Generate passwords.txt from one or more text files", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		for _, group := range []struct {
 			label string
@@ -134,8 +140,24 @@ func newFilesCmd() *cobra.Command {
 				}
 			}
 		}
+		if policyPath != "" {
+			for _, name := range []string{"min-length", "max-length", "require", "max-bytes", "max-repeat", "forbidden"} {
+				if cmd.Flags().Changed(name) {
+					return fmt.Errorf("--policy cannot be combined with --%s", name)
+				}
+			}
+			p, err := loadPolicyFile(policyPath)
+			if err != nil {
+				return err
+			}
+			s.setPolicy(p)
+		}
 		return s.run(cmd)
 	}}
+	cmd.Flags().StringVar(&policyPath, "policy", "", "standalone policy YAML; replaces all policy flags")
+	cmd.Flags().IntVar(&s.MaxBytes, "max-bytes", 0, "maximum UTF-8 bytes (0 is unlimited)")
+	cmd.Flags().IntVar(&s.MaxRepeat, "max-repeat", 0, "maximum consecutive identical characters (0 is unlimited)")
+	cmd.Flags().StringVar(&s.Forbidden, "forbidden", "", "characters to exclude")
 	cmd.Flags().StringArrayVarP(&files, "input", "i", nil, "text file, one entry per line (repeatable)")
 	cmd.Flags().StringArrayVar(&emails, "emails", nil, "business email text file (repeatable)")
 	cmd.Flags().StringArrayVar(&names, "names", nil, "names text file (repeatable)")
@@ -158,6 +180,12 @@ const consoleHelp = `Commands:
   set require upper,lower,digit,special  (or none)
   set budget 10000                 Maximum candidates (up to 100000)
   set output /path/passwords.txt    New output file
+  set max-bytes 72                  Optional byte limit (0 disables)
+  set max-repeat 3                  Optional repeat limit (0 disables)
+  set forbidden <>                  Exclude individual characters
+  policy /path/policy.yaml          Load a standalone policy
+  save /path/session.json           Save sources and options (private file)
+  load /path/session.json           Restore a saved session
   show options                     Review files and password policy
   run                              Generate the text wordlist
   reset                            Clear session and restore defaults
@@ -193,6 +221,25 @@ func runConsole(cmd *cobra.Command, _ []string) error {
 		case "reset":
 			s = newSession()
 			fmt.Fprintln(out, "[+] Session reset")
+		case "save":
+			err = s.save(strings.Trim(rest, "\"'"))
+			if err == nil {
+				fmt.Fprintln(out, "[+] Session saved")
+			}
+		case "load":
+			var loaded *session
+			loaded, err = loadSession(strings.Trim(rest, "\"'"))
+			if err == nil {
+				s = loaded
+				fmt.Fprintln(out, "[+] Session restored")
+			}
+		case "policy":
+			var p profile.Policy
+			p, err = loadPolicyFile(strings.Trim(rest, "\"'"))
+			if err == nil {
+				s.setPolicy(p)
+				fmt.Fprintln(out, "[+] Policy loaded")
+			}
 		case "show":
 			if rest != "options" {
 				err = fmt.Errorf("use show options")
@@ -203,6 +250,7 @@ func runConsole(cmd *cobra.Command, _ []string) error {
 				fmt.Fprintln(out, "  "+source)
 			}
 			fmt.Fprintf(out, "Policy: %d–%d characters; require %s\nBudget: %d\nOutput: %s\n\n", s.Min, s.Max, strings.Join(s.Require, ","), s.Budget, s.Output)
+			fmt.Fprintf(out, "Max bytes: %d; max repeats: %d; forbidden: %q; blocked passwords: %d\n", s.MaxBytes, s.MaxRepeat, s.Forbidden, len(s.Blocklist))
 		case "add":
 			kind, path, _ := strings.Cut(rest, " ")
 			path = strings.Trim(strings.TrimSpace(path), "\"'")
@@ -220,6 +268,8 @@ func runConsole(cmd *cobra.Command, _ []string) error {
 			key, value, _ := strings.Cut(rest, " ")
 			value = strings.Trim(strings.TrimSpace(value), "\"'")
 			switch key {
+			case "forbidden":
+				s.Forbidden = value
 			case "output":
 				s.Output = value
 			case "require":
@@ -227,11 +277,15 @@ func runConsole(cmd *cobra.Command, _ []string) error {
 				if value != "none" && value != "" {
 					s.Require = strings.Split(value, ",")
 				}
-			case "min", "max", "budget":
+			case "min", "max", "budget", "max-bytes", "max-repeat":
 				var n int
 				n, err = strconv.Atoi(value)
 				if err == nil {
 					switch key {
+					case "max-bytes":
+						s.MaxBytes = n
+					case "max-repeat":
+						s.MaxRepeat = n
 					case "min":
 						s.Min = n
 					case "max":
@@ -255,4 +309,73 @@ func runConsole(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintln(out, "[-] "+err.Error())
 		}
 	}
+}
+
+func (s *session) setPolicy(p profile.Policy) {
+	s.Min = p.MinLen
+	s.Max = p.MaxLen
+	s.Require = p.Require
+	s.MaxBytes = p.MaxBytes
+	s.MaxRepeat = p.MaxRepeat
+	s.Forbidden = p.Forbidden
+	s.Blocklist = p.Blocklist
+}
+
+type savedSession struct {
+	Schema  int     `json:"schema"`
+	Session session `json:"session"`
+}
+
+func (s *session) save(path string) error {
+	if _, err := s.config(); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(savedSession{Schema: 1, Session: *s}, "", "  ")
+	if err != nil {
+		return err
+	}
+	if len(data)+1 > 4<<20 {
+		return fmt.Errorf("saved session exceeds 4 MiB")
+	}
+	return writePrivate(path, append(data, '\n'))
+}
+func loadSession(path string) (*session, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, (4<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 4<<20 {
+		return nil, fmt.Errorf("session exceeds 4 MiB")
+	}
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	var doc savedSession
+	if err = dec.Decode(&doc); err != nil {
+		return nil, err
+	}
+	if err = dec.Decode(new(any)); err != io.EOF {
+		return nil, fmt.Errorf("session must contain one JSON document")
+	}
+	if doc.Schema != 1 {
+		return nil, fmt.Errorf("unsupported session schema %d", doc.Schema)
+	}
+	s := &doc.Session
+	if len(s.Keywords) > maxInputLines || len(s.Sources) > maxInputLines {
+		return nil, fmt.Errorf("session exceeds input limits")
+	}
+	for _, word := range s.Keywords {
+		lines, e := readWords(strings.NewReader(word))
+		if e != nil || len(lines) != 1 || strings.ContainsAny(word, "\r\n") {
+			return nil, fmt.Errorf("invalid saved input entry")
+		}
+	}
+	if _, err = s.config(); err != nil {
+		return nil, err
+	}
+	return s, nil
 }

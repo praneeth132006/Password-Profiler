@@ -28,7 +28,7 @@ import (
 )
 
 // version is overrideable at build time via -ldflags "-X main.version=...".
-var version = "0.2.0"
+var version = "0.3.0"
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
@@ -48,7 +48,7 @@ func newRootCmd() *cobra.Command {
 		Version:       version,
 	}
 	root.RunE = runConsole
-	root.AddCommand(newGenerateCmd(), newConsoleCmd(), newFilesCmd(), newServeCmd())
+	root.AddCommand(newGenerateCmd(), newConsoleCmd(), newFilesCmd(), newServeCmd(), newCheckCmd(), newValidateCmd())
 	return root
 }
 
@@ -106,7 +106,7 @@ func runGenerate(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
 	case "wordlist":
 		return runWordlist(cmd, cfg, opts)
 	case "rules":
-		if cfg.Policy.MinLen > 0 || cfg.Policy.MaxLen > 0 || len(cfg.Policy.Require) > 0 {
+		if policy.FromProfile(cfg.Policy).Active() {
 			return fmt.Errorf("password policy is supported only in wordlist mode; rules cannot enforce it")
 		}
 		return runRules(cmd, cfg, opts)
@@ -184,11 +184,7 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr 
 		Structural: true,
 		Depth:      cfg.Rules.Depth,
 	})
-	pol := policy.New(policy.Policy{
-		MinLen:  cfg.Policy.MinLen,
-		MaxLen:  cfg.Policy.MaxLen,
-		Require: cfg.Policy.Require,
-	})
+	pol := policy.FromProfile(cfg.Policy)
 	w := output.New(sink, buildDeduper(cfg, opts.dedup), cfg.Output.Budget)
 
 	start := time.Now()
