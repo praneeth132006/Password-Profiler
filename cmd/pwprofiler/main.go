@@ -7,7 +7,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +28,7 @@ import (
 )
 
 // version is overrideable at build time via -ldflags "-X main.version=...".
-var version = "0.1.0-phase1"
+var version = "0.2.0"
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
@@ -45,7 +47,8 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: false,
 		Version:       version,
 	}
-	root.AddCommand(newGenerateCmd())
+	root.RunE = runConsole
+	root.AddCommand(newGenerateCmd(), newConsoleCmd(), newFilesCmd(), newServeCmd())
 	return root
 }
 
@@ -103,6 +106,9 @@ func runGenerate(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
 	case "wordlist":
 		return runWordlist(cmd, cfg, opts)
 	case "rules":
+		if cfg.Policy.MinLen > 0 || cfg.Policy.MaxLen > 0 || len(cfg.Policy.Require) > 0 {
+			return fmt.Errorf("password policy is supported only in wordlist mode; rules cannot enforce it")
+		}
 		return runRules(cmd, cfg, opts)
 	default:
 		return fmt.Errorf("output.mode %q: must be wordlist|rules", cfg.Output.Mode)
@@ -137,22 +143,33 @@ func buildDeduper(cfg *profile.Config, strategy string) dedup.Deduper {
 }
 
 // runWordlist runs the full pipeline and writes every candidate.
-func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
+func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr error) {
+	base := tokens.Extract(cfg.Profile)
+	if len(base) == 0 {
+		return fmt.Errorf("inputs contain no usable tokens")
+	}
 	// Resolve the destination: a file, or stdout. Candidates go to the sink;
 	// the stats summary always goes to stderr so a stdout pipe stays clean.
-	var sink *os.File
+	var sink io.Writer
 	if cfg.Output.File != "" {
-		f, err := os.Create(cfg.Output.File)
+		f, err := os.OpenFile(cfg.Output.File, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if err != nil {
 			return fmt.Errorf("create output file %q: %w", cfg.Output.File, err)
 		}
-		defer f.Close()
+		defer func() {
+			closeErr := f.Close()
+			if retErr == nil {
+				retErr = closeErr
+			}
+			if retErr != nil {
+				_ = os.Remove(cfg.Output.File)
+			}
+		}()
 		sink = f
 	} else {
-		sink = os.Stdout
+		sink = cmd.OutOrStdout()
 	}
 
-	base := tokens.Extract(cfg.Profile)
 	combined := combine.Generate(base, combine.Config{
 		MaxCombine: cfg.Rules.MaxCombine,
 		Separators: cfg.Rules.Separators,
@@ -175,13 +192,22 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
 	w := output.New(sink, buildDeduper(cfg, opts.dedup), cfg.Output.Budget)
 
 	start := time.Now()
-	filtered, err := expand(combined.Tokens, eng, pol, w, opts.workers)
+	var filtered int
+	var err error
+	if opts.workers <= 1 {
+		filtered, err = expandSequentialContext(cmd.Context(), combined.Tokens, eng, pol, w)
+	} else {
+		filtered, err = expand(combined.Tokens, eng, pol, w, opts.workers)
+	}
 	if err != nil {
 		return err
 	}
 	stats, err := w.Flush()
 	if err != nil {
 		return err
+	}
+	if stats.Emitted == 0 {
+		return fmt.Errorf("no candidates match the password policy; add input words or adjust the policy")
 	}
 	elapsed := time.Since(start)
 
@@ -209,8 +235,15 @@ func expand(toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Wri
 }
 
 func expandSequential(toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer) (int, error) {
+	return expandSequentialContext(context.Background(), toks, eng, pol, w)
+}
+
+func expandSequentialContext(ctx context.Context, toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer) (int, error) {
 	var filtered int
 	for _, tok := range toks {
+		if err := ctx.Err(); err != nil {
+			return filtered, err
+		}
 		for _, cand := range eng.Expand(tok) {
 			if pol.Active() && !pol.Allow(cand) {
 				filtered++
@@ -319,12 +352,15 @@ func policyNote(pol *policy.Filter, filtered int) string {
 // runRules is the headline feature: instead of materializing a giant wordlist,
 // it writes a small base wordlist (the combined tokens) plus a hashcat .rule
 // file that encodes the mutation set. hashcat expands base × rules on the fly.
-func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
+func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr error) {
 	wordPath := cfg.Output.File
 	if wordPath == "" {
 		wordPath = "pwprofiler.words"
 	}
 	rulePath := deriveRulePath(wordPath)
+	if rulePath == wordPath {
+		return fmt.Errorf("wordlist output must not have a .rule extension")
+	}
 
 	// Base wordlist: the combined tokens, buffered + deduped, budget-capped.
 	base := tokens.Extract(cfg.Profile)
@@ -333,11 +369,19 @@ func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
 		Separators: cfg.Rules.Separators,
 		Limit:      cfg.Output.Budget,
 	})
-	wf, err := os.Create(wordPath)
+	wf, err := os.OpenFile(wordPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return fmt.Errorf("create wordlist %q: %w", wordPath, err)
 	}
-	defer wf.Close()
+	defer func() {
+		err := wf.Close()
+		if retErr == nil {
+			retErr = err
+		}
+		if retErr != nil {
+			_ = os.Remove(wordPath)
+		}
+	}()
 	ww := output.New(wf, buildDeduper(cfg, opts.dedup), cfg.Output.Budget)
 	for _, tok := range combined.Tokens {
 		if ok, err := ww.Add(tok); err != nil {
@@ -360,11 +404,19 @@ func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
 		Prepend:    prependAffixes,
 		Structural: true,
 	})
-	rf, err := os.Create(rulePath)
+	rf, err := os.OpenFile(rulePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return fmt.Errorf("create rule file %q: %w", rulePath, err)
 	}
-	defer rf.Close()
+	defer func() {
+		err := rf.Close()
+		if retErr == nil {
+			retErr = err
+		}
+		if retErr != nil {
+			_ = os.Remove(rulePath)
+		}
+	}()
 	if _, err := ruleSet.WriteTo(rf); err != nil {
 		return err
 	}

@@ -8,6 +8,17 @@ reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- Localhost browser workspace with multi-file upload, policy controls, preview and text download.
+- Interactive `console` (also the default command), categorized file inputs, editable policy and session review.
+- Scriptable `files` command with repeated inputs and password-policy flags.
+- Debian/Ubuntu package builder, source installation target and tagged release workflow.
+- Integration tests for file/console generation, browser downloads, policy compliance and invalid requests.
+
+### Fixed
+- File destinations no longer silently overwrite existing data; failed/empty wordlist runs remove their new output.
+- Rules mode rejects policies that it cannot enforce. Negative generation budgets are rejected.
+
+### Previously added
 - **Phase 6 — Scale hardening**: pluggable de-duplication (`internal/dedup`)
   with an exact hash set and a memory-bounded Bloom filter (≈9 MB for 5M items
   at a 0.1% false-positive rate), selectable via `--dedup auto|exact|bloom`; a

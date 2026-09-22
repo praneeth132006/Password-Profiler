@@ -50,6 +50,97 @@ Or install the binary directly:
 go install github.com/praneeth132006/Password-Profiler/cmd/pwprofiler@latest
 ```
 
+## Local UI and interactive console
+
+Build once with `make build`, then choose a workflow:
+
+```bash
+./pwprofiler serve           # open http://127.0.0.1:8080 in your browser
+./pwprofiler serve --port 9000
+./pwprofiler console         # interactive workspace; also the default with no arguments
+```
+
+The embedded browser UI needs no Node.js, external assets, or cloud service.
+Upload multiple business-email, name, company and keyword files, or paste
+entries directly. Set minimum/maximum length, required character classes and a
+candidate limit. Generate, preview, and download `passwords.txt`.
+The server binds only to `127.0.0.1`, checks Host/Origin, processes one generation
+at a time, and keeps uploads and generated results in memory. Stop with Ctrl+C.
+
+The console supports a familiar command-driven workflow:
+
+```text
+pwprofiler > add emails /path/to/email.txt
+[+] Business email found : /path/to/email.txt (12 lines)
+pwprofiler > add names /path/to/names.txt
+pwprofiler > add companies /path/to/companies.txt
+pwprofiler > add keywords /path/to/keywords.txt
+pwprofiler > set min 10
+pwprofiler > set max 24
+pwprofiler > set require upper,lower,digit,special
+pwprofiler > set budget 10000
+pwprofiler > set output /path/to/passwords.txt
+pwprofiler > show options
+pwprofiler > run
+pwprofiler > exit
+```
+
+Use `help` for all commands, `reset` to clear the session, and `set require none`
+to disable character-class requirements. Paths may contain spaces, with or
+without surrounding quotes. Input categories are labels; each uses the same
+local token extraction (including splitting email addresses into components).
+
+For scripts, use repeatable file flags:
+
+```bash
+./pwprofiler files --emails email.txt --names names.txt \
+  --input keywords.txt --input more-keywords.txt \
+  --min-length 10 --max-length 24 --require upper,lower,digit,special \
+  --budget 10000 --output passwords.txt
+```
+
+These workflows accept UTF-8 text, one entry per line (not structured CSV).
+Blank lines and `#` comments are ignored. Limits: 1 MiB per file, 256 bytes per
+entry, 2,000 entries per session, 4 MiB per browser request, and 100,000 output
+candidates. Password lengths are measured in Unicode characters. Defaults are
+8–24 characters, all four classes required, and 10,000 unique candidates.
+Case transforms, partial leetspeak, structural changes and common suffixes are
+applied with depth 2. Use the YAML workflow below for custom mutation rules and
+cross-token combinations. A candidate limit is a ceiling, not a requested count;
+restrictive policies may yield fewer or zero matches. Zero matches return an
+error instead of leaving an empty file. File output refuses to overwrite
+existing files and uses owner-only permissions on Unix.
+
+## Debian / Ubuntu installation
+
+On Debian/Ubuntu with Go and `dpkg-dev` installed, build a local package:
+
+```bash
+make deb                                  # amd64 by default
+ARCH=arm64 make deb                       # optional ARM64 package
+sudo apt install ./dist/pwprofiler_0.2.0_amd64.deb
+pwprofiler console
+pwprofiler serve
+```
+
+The package contains a self-contained binary, including the UI, and installs
+`/usr/bin/pwprofiler`. Remove it with `sudo apt remove pwprofiler`.
+The release workflow builds both architectures and checksums when a `v*` tag
+is pushed. A release has not been published by this change.
+
+**`sudo apt install pwprofiler` without a local file requires a configured APT
+repository. This project is not currently published in the Debian/Ubuntu package
+indexes.** Use the local `.deb` command above; it does not require adding a
+third-party repository. See [packaging notes](packaging/README.md) for publishing.
+
+For a conventional source installation on macOS/Linux:
+
+```bash
+make build
+sudo make install                         # /usr/local/bin/pwprofiler
+# Or: make install PREFIX="$HOME/.local"   # add ~/.local/bin to PATH
+```
+
 ## Quick start
 
 ```bash
@@ -179,10 +270,14 @@ john --wordlist=candidates.txt --format=raw-md5 hashes.txt
 wordlist plus a hashcat `.rule` file instead of a giant materialized list:
 
 ```bash
-pwprofiler generate -c profile.yaml --mode rules -o base.words
+pwprofiler generate -c rules-profile.yaml --mode rules -o base.words
 # -> writes base.words + base.rule, and prints the command to run:
 hashcat -a 0 -m <hash-type> hashes.txt base.words -r base.rule
 ```
+
+Use a configuration with `policy: {}` for rules mode. Rules mode rejects a
+nonempty policy because it cannot enforce the final mutated passwords; use
+wordlist mode when policy compliance is required.
 
 The `.rule` file uses standard hashcat functions (`:`, `l`, `u`, `c`, `sa@`,
 `$1$2$3`, `^0^9^9^1`, `r`, `d`, `]`), each validated by the built-in interpreter

@@ -27,7 +27,7 @@ policy:
   require: [upper, lower, digit]
 
 output:
-  mode: wordlist           # wordlist | rules  (rules mode arrives in Phase 4)
+  mode: wordlist           # wordlist | rules (rules requires an empty policy)
   file: ""                 # empty => stdout
   budget: 5000000
   dedupe: true

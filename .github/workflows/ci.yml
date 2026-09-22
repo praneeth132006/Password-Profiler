@@ -43,3 +43,28 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code go.mod go.sum
+
+  package:
+    name: Debian install smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: make deb
+      - run: sudo apt-get install -y ./dist/pwprofiler_0.2.0_amd64.deb
+      - name: Verify installed CLI and embedded UI
+        run: |
+          pwprofiler --version
+          printf 'Northstar\n' > /tmp/words.txt
+          pwprofiler files -i /tmp/words.txt -o /tmp/passwords.txt
+          test -s /tmp/passwords.txt
+          pwprofiler serve --port 8187 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in 1 2 3 4 5; do
+            if curl --fail http://127.0.0.1:8187/ -o /tmp/pwprofiler.html; then break; fi
+            sleep 1
+          done
+          grep -q 'Build a more focused wordlist' /tmp/pwprofiler.html

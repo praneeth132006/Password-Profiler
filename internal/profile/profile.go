@@ -124,6 +124,9 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) validate() error {
+	if c.Output.Budget < 0 {
+		return fmt.Errorf("output.budget must be positive")
+	}
 	if c.Profile.isEmpty() {
 		return fmt.Errorf("profile: at least one field (name, keywords, company, ...) is required")
 	}

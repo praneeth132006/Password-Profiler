@@ -21,3 +21,13 @@ run: build
 
 clean:
 	rm -f $(BIN)
+
+.PHONY: install deb
+PREFIX ?= /usr/local
+
+install: build
+	install -d "$(DESTDIR)$(PREFIX)/bin"
+	install -m 755 $(BIN) "$(DESTDIR)$(PREFIX)/bin/$(BIN)"
+
+deb:
+	./scripts/build-deb.sh

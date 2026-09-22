@@ -1,0 +1,25 @@
+name: Release packages
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go test -race ./...
+      - name: Build Debian packages
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" ARCH=amd64 make deb
+          VERSION="${GITHUB_REF_NAME#v}" ARCH=arm64 make deb
+          cd dist
+          sha256sum *.deb > SHA256SUMS
+      - name: Publish release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.deb dist/SHA256SUMS --verify-tag --generate-notes

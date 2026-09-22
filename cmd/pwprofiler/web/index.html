@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Password Profiler · Local workspace</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand"><span class="logo">P_</span> PASSWORD PROFILER</div>
+      <small>● Local workspace</small>
+    </header>
+    <main>
+      <div class="eyebrow">PASSWORD AUDIT TOOLKIT / 01</div>
+      <h1>Build a more focused wordlist.</h1>
+      <p>
+        Bring your source files. Define the password policy. Export only
+        matching candidates.
+      </p>
+      <form id="form">
+        <div class="layout">
+          <section class="panel">
+            <div class="step">01 / SOURCE MATERIAL</div>
+            <h2>Start with what you know</h2>
+            <p>
+              Upload UTF-8 text files, one entry per line. You can include
+              multiple files in each category.
+            </p>
+            <div class="uploads">
+              <label class="upload"
+                ><span>Business emails</span
+                ><small>Addresses and company domains</small
+                ><input
+                  type="file"
+                  name="emails"
+                  multiple
+                  accept=".txt,text/plain"
+                  aria-label="Business email files"
+              /></label>
+              <label class="upload"
+                ><span>Names</span><small>Names, nicknames and aliases</small
+                ><input
+                  type="file"
+                  name="names"
+                  multiple
+                  accept=".txt,text/plain"
+                  aria-label="Name files"
+              /></label>
+              <label class="upload"
+                ><span>Companies</span
+                ><small>Organizations and brand names</small
+                ><input
+                  type="file"
+                  name="companies"
+                  multiple
+                  accept=".txt,text/plain"
+                  aria-label="Company files"
+              /></label>
+              <label class="upload"
+                ><span>Other keywords</span
+                ><small>Additional words for this audit</small
+                ><input
+                  type="file"
+                  name="keywords"
+                  multiple
+                  accept=".txt,text/plain"
+                  aria-label="Keyword files"
+              /></label>
+            </div>
+            <label class="field" for="words">Or add words directly</label
+            ><textarea
+              id="words"
+              name="words"
+              placeholder="Example: one entry per line&#10;Northstar&#10;Riverstone"
+            ></textarea>
+            <div class="note">
+              Up to 2,000 entries total · 1 MiB per file · 256 bytes per
+              entry.<br />Blank lines and lines beginning with # are ignored.
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="step">02 / PASSWORD POLICY</div>
+            <h2>Set the boundaries</h2>
+            <p>Every exported candidate must match these requirements.</p>
+            <div class="row">
+              <label class="field"
+                >Min. length<input
+                  name="min"
+                  type="number"
+                  min="0"
+                  max="128"
+                  value="8"
+                  required /></label
+              ><label class="field"
+                >Max. length<input
+                  name="max"
+                  type="number"
+                  min="1"
+                  max="128"
+                  value="24"
+                  required
+              /></label>
+            </div>
+            <fieldset>
+              <legend>Required characters</legend>
+              <div class="checks">
+                <label
+                  ><input
+                    type="checkbox"
+                    name="require"
+                    value="upper"
+                    checked
+                  />
+                  Uppercase</label
+                ><label
+                  ><input
+                    type="checkbox"
+                    name="require"
+                    value="lower"
+                    checked
+                  />
+                  Lowercase</label
+                ><label
+                  ><input
+                    type="checkbox"
+                    name="require"
+                    value="digit"
+                    checked
+                  />
+                  Number</label
+                ><label
+                  ><input
+                    type="checkbox"
+                    name="require"
+                    value="special"
+                    checked
+                  />
+                  Special</label
+                >
+              </div>
+            </fieldset>
+            <label class="field"
+              >Candidate limit<input
+                name="budget"
+                type="number"
+                min="1"
+                max="100000"
+                value="10000"
+                required
+            /></label>
+            <div class="note">
+              Unique candidates, capped at your limit. Case variations,
+              leetspeak and common suffixes are included.
+            </div>
+            <button class="primary" id="generate" type="submit">
+              Generate wordlist →
+            </button>
+            <div class="note">
+              Inputs are processed locally and are not saved by the server.
+            </div>
+            <div class="terminal">
+              Prefer the terminal?<br /><code>pwprofiler console</code
+              ><br />Same engine. Your workflow.
+            </div>
+          </aside>
+        </div>
+      </form>
+      <section
+        id="result"
+        class="result"
+        aria-live="polite"
+        aria-atomic="true"
+        hidden
+      >
+        <p id="status"></p>
+        <div id="download" hidden>
+          <a id="link" download="passwords.txt">Download passwords.txt ↓</a>
+          <details>
+            <summary>Preview first 20 candidates</summary>
+            <pre id="preview"></pre>
+          </details>
+        </div>
+      </section>
+      <footer>
+        <span>For authorized password auditing.</span
+        ><span>Local processing · No external assets · Plain text export</span>
+      </footer>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
