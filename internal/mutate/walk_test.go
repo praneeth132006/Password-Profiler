@@ -119,3 +119,37 @@ func TestFullLeetStreamingMatchesReference(t *testing.T) {
 		t.Fatal("full leet ordering or coverage changed")
 	}
 }
+
+func TestExhaustiveIgnoresResourceCaps(t *testing.T) {
+	e := NewEngine(Config{Exhaustive: true, MaxVariants: 1, MaxAttempts: 1, MaxBytes: 1, Append: []string{"0", "1"}, Depth: 3})
+	got := map[string]bool{}
+	stats, err := e.Walk(context.Background(), "xx", func(s string) bool { got[s] = true; return true })
+	// Independent binary-tree enumeration: 1 + 2 + 4 + 8 states.
+	if err != nil || stats.Limited || stats.Oversized != 0 || len(got) != 15 {
+		t.Fatalf("%+v n=%d err=%v", stats, len(got), err)
+	}
+	for _, s := range []string{"xx", "xx000", "xx001", "xx010", "xx011", "xx100", "xx101", "xx110", "xx111"} {
+		if !got[s] {
+			t.Fatal("missing", s)
+		}
+	}
+}
+func TestAllLeetPositions(t *testing.T) {
+	e := NewEngine(Config{Exhaustive: true, Leet: "full", LeetCap: -1, Depth: 1})
+	got := map[string]bool{}
+	_, err := e.Walk(context.Background(), "aaaa", func(s string) bool { got[s] = true; return true })
+	if err != nil || len(got) != 81 {
+		t.Fatalf("expected 3^4 states; got %d, %v", len(got), err)
+	}
+	for _, a := range "a@4" {
+		for _, b := range "a@4" {
+			for _, c := range "a@4" {
+				for _, d := range "a@4" {
+					if !got[string([]rune{a, b, c, d})] {
+						t.Fatal("missing leet combination")
+					}
+				}
+			}
+		}
+	}
+}

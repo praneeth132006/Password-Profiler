@@ -28,7 +28,7 @@ import (
 )
 
 // version is overrideable at build time via -ldflags "-X main.version=...".
-var version = "0.4.0"
+var version = "0.5.0"
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
@@ -65,6 +65,7 @@ func newGenerateCmd() *cobra.Command {
 		outPath    string
 		modeFlag   string
 		opts       genOpts
+		exhaustive bool
 	)
 	cmd := &cobra.Command{
 		Use:   "generate",
@@ -75,6 +76,9 @@ func newGenerateCmd() *cobra.Command {
 				return err
 			}
 			// Flag overrides.
+			if exhaustive {
+				cfg.Rules.Exhaustive = true
+			}
 			if modeFlag != "" {
 				cfg.Output.Mode = modeFlag
 			}
@@ -92,6 +96,7 @@ func newGenerateCmd() *cobra.Command {
 			return runGenerate(cmd, cfg, opts)
 		},
 	}
+	cmd.Flags().BoolVar(&exhaustive, "exhaustive", false, "enumerate the configured finite rules without count/work/byte caps (exact dedup; may require substantial RAM and disk)")
 	cmd.Flags().StringVarP(&configPath, "config", "c", "", "path to YAML config (required)")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "write candidates here instead of the config's output.file / stdout")
 	cmd.Flags().StringVar(&modeFlag, "mode", "", "override output mode: wordlist|rules")
@@ -103,6 +108,9 @@ func newGenerateCmd() *cobra.Command {
 
 // runGenerate dispatches on the output mode.
 func runGenerate(cmd *cobra.Command, cfg *profile.Config, opts genOpts) error {
+	if cfg.Rules.Exhaustive && cfg.Output.Mode != "wordlist" {
+		return fmt.Errorf("exhaustive mode requires wordlist output")
+	}
 	switch cfg.Output.Mode {
 	case "wordlist":
 		return runWordlist(cmd, cfg, opts)
@@ -123,6 +131,9 @@ const bloomAutoThreshold = 1_000_000
 // buildDeduper constructs the de-dup strategy from config + the --dedup flag.
 // Returns nil when de-duplication is disabled.
 func buildDeduper(cfg *profile.Config, strategy string) dedup.Deduper {
+	if cfg.Rules.Exhaustive {
+		return dedup.NewExact()
+	}
 	if !cfg.Output.Dedupe {
 		return nil
 	}
@@ -180,12 +191,13 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr 
 	var combined combine.Result
 	source := func(sourceCtx context.Context, yield func(string) bool) error {
 		var err error
-		combined, err = combine.Walk(sourceCtx, base, combine.Config{MaxCombine: cfg.Rules.MaxCombine, Separators: cfg.Rules.Separators, Limit: cfg.Rules.CombineLimit, MaxAttempts: cfg.Rules.CombineAttempts, MaxBytes: cfg.Rules.MaxCandidateBytes}, yield)
+		combined, err = combine.Walk(sourceCtx, base, combine.Config{Exhaustive: cfg.Rules.Exhaustive, RepeatTokens: cfg.Rules.RepeatTokens, MaxCombine: cfg.Rules.MaxCombine, Separators: cfg.Rules.Separators, Limit: cfg.Rules.CombineLimit, MaxAttempts: cfg.Rules.CombineAttempts, MaxBytes: cfg.Rules.MaxCandidateBytes}, yield)
 		return err
 	}
 
 	appendAffixes, prependAffixes := buildAffixes(cfg)
 	eng := mutate.NewEngine(mutate.Config{
+		Exhaustive: cfg.Rules.Exhaustive, LeetCap: cfg.Rules.LeetCap,
 		MaxVariants: cfg.Rules.MaxVariants, MaxAttempts: cfg.Rules.MaxAttempts, MaxBytes: cfg.Rules.MaxCandidateBytes,
 		Cases:      cfg.Rules.Case,
 		Leet:       cfg.Rules.Leet,
@@ -195,7 +207,12 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr 
 		Depth:      cfg.Rules.Depth,
 	})
 	pol := policy.FromProfile(cfg.Policy)
-	w := output.New(sink, buildDeduper(cfg, opts.dedup), cfg.Output.Budget)
+	budget := cfg.Output.Budget
+	if cfg.Rules.Exhaustive {
+		budget = 0
+		fmt.Fprintln(cmd.ErrOrStderr(), "pwprofiler: exhaustive configured-rule traversal; no count/work/byte caps, exact dedup; memory and disk use may grow substantially")
+	}
+	w := output.New(sink, buildDeduper(cfg, opts.dedup), budget)
 
 	start := time.Now()
 	search, err := expandStream(ctx, source, eng, pol, w, opts.workers)
@@ -230,6 +247,9 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr 
 		"           dedup=%s workers=%d, %s in %s (%.0f cand/s)\n",
 		w.DedupKind(), opts.workers, humanCount(stats.Emitted), elapsed.Round(time.Millisecond),
 		ratePerSec(stats.Emitted, elapsed))
+	if cfg.Rules.Exhaustive {
+		fmt.Fprintln(cmd.ErrOrStderr(), "pwprofiler: completed all configured token combinations and mutations through the configured depth; policy applied")
+	}
 	return nil
 }
 
@@ -257,10 +277,11 @@ func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr err
 	// Base wordlist: the combined tokens, buffered + deduped, budget-capped.
 	base := tokens.Extract(cfg.Profile)
 	combined := combine.Generate(base, combine.Config{
-		MaxCombine:  cfg.Rules.MaxCombine,
-		Separators:  cfg.Rules.Separators,
-		Limit:       cfg.Rules.CombineLimit,
-		MaxAttempts: cfg.Rules.CombineAttempts, MaxBytes: cfg.Rules.MaxCandidateBytes,
+		RepeatTokens: cfg.Rules.RepeatTokens,
+		MaxCombine:   cfg.Rules.MaxCombine,
+		Separators:   cfg.Rules.Separators,
+		Limit:        cfg.Rules.CombineLimit,
+		MaxAttempts:  cfg.Rules.CombineAttempts, MaxBytes: cfg.Rules.MaxCandidateBytes,
 	})
 	wf, err := os.OpenFile(wordPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {

@@ -4,10 +4,46 @@ Version 0.4.0 replaces eager combination and mutation materialization with a
 consumer-driven pipeline. It improves resource usage and fixes a coverage bug;
 it does not introduce a trained model or claim improved real-world guessing rates.
 
+## Exhaustive configured-rule mode
+
+Version 0.5.0 adds `rules.exhaustive: true` / `--exhaustive` for wordlist output.
+It disables the output budget, combination count/work limits, mutation
+state/work limits and intermediate byte limits. It forces exact global dedup,
+so Bloom false positives cannot omit results. Context cancellation and I/O
+errors still stop execution; only a successful run prints the completion notice.
+No feasible implementation can promise completion for arbitrary inputs at any
+cost: exact sets and breadth-first mutation frontiers grow with the search.
+Failed or cancelled file runs remove the partial output, as before.
+
+The coverage contract is precisely:
+
+- Extracted tokens, including the existing extraction/normalization rules.
+- Ordered combinations of 1 through `max_combine` tokens (1–8). By default
+  indices are distinct; `repeat_tokens: true` permits reuse at every position.
+- Each selected separator is used uniformly in a combination. Mixed separators
+  within one combination are not part of this grammar.
+- Configured case seeds followed by the existing atomic transformations through
+  `depth` steps (1–8). Case seeds are named transformations, not all possible
+  uppercase/lowercase masks. Cases are applied to the combined token.
+- `leet: full` uses all listed substitutions up to `leet_cap` positions per step.
+  Zero means three positions; **-1 means all eligible positions**. `partial`
+  retains its existing primary-substitution semantics.
+- Only candidates satisfying the policy are exported. Policy rejection never
+  prunes intermediate states, including long states that can later truncate.
+
+Exhaustive mode removes operational truncation; it does not silently change
+this grammar, generate arbitrary characters, or claim all possible passwords.
+Ordinary bounded mode retains its resource defaults and warnings. CLI/console
+sessions default to two joined tokens, depth two, partial leet, four separators
+(`""`, `.`, `_`, `-`) and 100,000 outputs; raw YAML defaults remain unchanged.
+Session budgets no longer have a 100,000 upper bound; browser generation still
+does, and exports exhaustive YAML for CLI execution without buffering huge
+wordlists in the browser.
+
 ## Pipeline
 
 1. Extract unique, sorted base tokens from the supplied profile.
-2. Yield singles and ordered combinations of distinct token indices lazily.
+2. Yield singles and ordered combinations of token indices lazily (optionally with repetition).
 3. For each token, explore unique mutation states in breadth-first order. Emit
    case seeds first, followed by leet, append, prepend and structural transforms.
 4. Check each candidate against the policy; rejected candidates can still be

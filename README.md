@@ -152,7 +152,7 @@ On Debian/Ubuntu with Go and `dpkg-dev` installed, build a local package:
 ```bash
 make deb                                  # amd64 by default
 ARCH=arm64 make deb                       # optional ARM64 package
-sudo apt install ./dist/pwprofiler_0.4.0_amd64.deb
+sudo apt install ./dist/pwprofiler_0.5.0_amd64.deb
 pwprofiler console
 pwprofiler serve
 ```
@@ -204,7 +204,39 @@ Flags:
 For large runs, `--workers N` (1–64) parallelizes mutation across N goroutines (a single
 consumer still serializes writes, so output is correct but unordered), and
 `--dedup bloom` keeps memory bounded regardless of output size. `auto` (the
-default) switches to a Bloom filter once the budget is large.
+default) switches to a Bloom filter once the budget is large. Bloom filters can
+omit unique candidates through false positives; use exact or exhaustive mode
+when complete coverage of the configured search is required.
+
+## Large and exhaustive wordlists
+
+File, console and browser defaults now combine up to **two tokens** with four
+separators and allow **100,000 outputs**. To write a larger finite search directly
+to disk without count or work caps:
+
+```bash
+pwprofiler files -i words.txt --max-combine 3 --depth 2 --leet full \
+  --repeat-tokens --exhaustive -o passwords.txt
+```
+
+Add `--leet-cap -1` to substitute every eligible position; the default is three
+positions per leet step. This can multiply the search space dramatically.
+`--max-combine` and `--depth` each accept 1–8. All generated results still pass the
+password policy. Exhaustive mode forces exact deduplication, including when
+`--dedup bloom` was requested, and ignores the output budget and resource caps.
+It completes the **configured transformations**, not every conceivable password.
+Exact deduplication and mutation frontiers can require substantial RAM, disk and
+time. Ctrl+C cancels; cancelled/failed file runs remove their partial output.
+
+The console supports `set exhaustive true`, `set max-combine 3`, `set depth 2`,
+`set leet full`, `set leet-cap -1` and `set repeat-tokens true`.
+The browser's **Generation coverage** controls configure the same search. For
+large runs, click **Export exhaustive CLI configuration**, save `audit.yaml`,
+and run `pwprofiler generate -c audit.yaml -o passwords.txt`. The download embeds
+your source words and policy; keep it private. Browser wordlist downloads remain
+limited to 100,000 candidates and 60 seconds. Neither limit applies to CLI
+exhaustive runs. YAML users can set `rules.exhaustive: true` or pass `--exhaustive`.
+See [the exact coverage contract](docs/ALGORITHM.md#exhaustive-configured-rule-mode).
 
 ## Config
 

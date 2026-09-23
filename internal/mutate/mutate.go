@@ -13,6 +13,7 @@ import "context"
 
 // Config controls a mutation run.
 type Config struct {
+	Exhaustive bool // disable work/state/byte caps; depth still defines the finite search
 	// MaxVariants and MaxAttempts bound retained states and attempted mutations per token.
 	// Zero values select defaults: 10,000 states, 100,000 attempts, 4,096 UTF-8 bytes.
 	MaxVariants int
@@ -98,7 +99,7 @@ func (e *Engine) Walk(ctx context.Context, token string, visit func(string) bool
 	if token == "" {
 		return stats, nil
 	}
-	if len(token) > maxBytes {
+	if !e.cfg.Exhaustive && len(token) > maxBytes {
 		stats.Oversized++
 		return stats, nil
 	}
@@ -112,7 +113,7 @@ func (e *Engine) Walk(ctx context.Context, token string, visit func(string) bool
 		if ctx.Err() != nil {
 			return false
 		}
-		if stats.Attempts >= maxAttempts {
+		if !e.cfg.Exhaustive && stats.Attempts >= maxAttempts {
 			stats.Limited = true
 			return false
 		}
@@ -120,14 +121,14 @@ func (e *Engine) Walk(ctx context.Context, token string, visit func(string) bool
 		if s == "" {
 			return true
 		}
-		if len(s) > maxBytes {
+		if !e.cfg.Exhaustive && len(s) > maxBytes {
 			stats.Oversized++
 			return true
 		}
 		if _, ok := seen[s]; ok {
 			return true
 		}
-		if stats.Unique >= maxVariants {
+		if !e.cfg.Exhaustive && stats.Unique >= maxVariants {
 			stats.Limited = true
 			return false
 		}

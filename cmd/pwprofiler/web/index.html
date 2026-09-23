@@ -146,13 +146,72 @@
                 type="number"
                 min="1"
                 max="100000"
-                value="10000"
+                value="100000"
                 required
             /></label>
             <div class="note">
               Unique candidates, capped at your limit. Case variations,
               leetspeak and common suffixes are included.
             </div>
+            <details class="advanced" open>
+              <summary>Generation coverage</summary>
+              <label class="field"
+                >Maximum joined tokens<input
+                  name="max_combine"
+                  type="number"
+                  min="1"
+                  max="8"
+                  value="2"
+                  required
+              /></label>
+              <label class="field"
+                >Mutation depth<input
+                  name="depth"
+                  type="number"
+                  min="1"
+                  max="8"
+                  value="2"
+                  required
+              /></label>
+              <label class="field"
+                >Leetspeak<select name="leet">
+                  <option value="off">Off</option>
+                  <option value="partial" selected>Partial</option>
+                  <option value="full">Full</option>
+                </select></label
+              >
+              <label class="field"
+                >Leet substitution positions<input
+                  name="leet_cap"
+                  type="number"
+                  min="-1"
+                  value="0"
+                  required
+              /></label>
+              <div class="note">
+                0 uses 3 positions; -1 includes every position in full mode.
+              </div>
+              <label
+                ><input name="repeat_tokens" type="checkbox" /> Allow repeated
+                tokens in combinations</label
+              >
+              <div class="note">
+                Combines words using no separator, dot, underscore, and hyphen.
+                Browser downloads are limited to 100,000 candidates and 60
+                seconds. Export an exhaustive configuration to complete the
+                defined search in the CLI.
+              </div>
+              <button class="secondary" type="submit" id="export-config">
+                Export exhaustive CLI configuration
+              </button>
+              <div class="note">
+                <code>pwprofiler generate -c audit.yaml -o passwords.txt</code
+                ><br />Exhaustive runs remove count, work and intermediate byte
+                caps and use exact deduplication. Time, RAM and disk
+                requirements can be very large. Depth, selected transforms and
+                policy still define the finite search.
+              </div>
+            </details>
             <details class="advanced">
               <summary>Advanced policy</summary>
               <div class="row">
@@ -219,7 +278,7 @@
         <div id="download" hidden>
           <a id="link" download="passwords.txt">Download passwords.txt ↓</a>
           <details>
-            <summary>Preview first 20 candidates</summary>
+            <summary id="preview-label">Preview first 20 candidates</summary>
             <pre id="preview"></pre>
           </details>
         </div>

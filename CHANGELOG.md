@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-09-23
+
+- Added exhaustive configured-rule wordlist traversal with exact dedup and no count, work, or intermediate byte caps.
+- Exposed token combination depth, mutation depth, full-leet position limits, and token reuse in file CLI, console and UI.
+- Increased session defaults to 100,000 outputs and two joined tokens with four separators. Removed the CLI session budget ceiling.
+- Added browser export of exhaustive YAML configurations for large direct-to-disk CLI runs.
+- Added known-complete search-space tests and documented precise completeness and resource limits.
+
 All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it

@@ -135,3 +135,11 @@ func TestWalkStopsAndBoundsWork(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExhaustiveRepeatedCombinations(t *testing.T) {
+	got := Generate([]string{"a", "b"}, Config{Exhaustive: true, RepeatTokens: true, MaxCombine: 3, Limit: 1, MaxAttempts: 1, MaxBytes: 1})
+	want := []string{"a", "b", "aa", "ab", "ba", "bb", "aaa", "aab", "aba", "abb", "baa", "bab", "bba", "bbb"}
+	if !reflect.DeepEqual(got.Tokens, want) || got.Capped || got.WorkLimited || got.Oversized > 0 {
+		t.Fatalf("%+v", got)
+	}
+}

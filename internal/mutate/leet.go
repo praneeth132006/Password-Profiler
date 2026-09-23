@@ -65,7 +65,7 @@ func leetVariants(s, mode string, cap int) []string {
 	case "partial":
 		return leetPartial(s)
 	case "full":
-		if cap <= 0 {
+		if cap == 0 {
 			cap = defaultLeetCap
 		}
 		return leetFull(s, cap)
@@ -158,7 +158,7 @@ func walkLeet(ctx context.Context, s, mode string, cap int, visit func(string) b
 		}
 		return true
 	case "full":
-		if cap <= 0 {
+		if cap == 0 {
 			cap = defaultLeetCap
 		}
 		return walkLeetFull(ctx, s, cap, visit)
@@ -210,6 +210,9 @@ func walkLeetFull(ctx context.Context, s string, cap int, visit func(string) boo
 		}
 		work[pos] = orig
 		return true
+	}
+	if cap < 0 {
+		cap = len(positions)
 	}
 	return recurse(0, cap, false)
 }

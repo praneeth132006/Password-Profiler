@@ -38,6 +38,9 @@ type Profile struct {
 
 // Rules configures the mutation and combination stages.
 type Rules struct {
+	Exhaustive        bool     `yaml:"exhaustive"`
+	RepeatTokens      bool     `yaml:"repeat_tokens"`
+	LeetCap           int      `yaml:"leet_cap"`
 	MaxVariants       int      `yaml:"max_variants"`
 	MaxAttempts       int      `yaml:"max_attempts"`
 	MaxCandidateBytes int      `yaml:"max_candidate_bytes"`
@@ -152,6 +155,12 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) validate() error {
+	if c.Rules.LeetCap < -1 {
+		return fmt.Errorf("rules.leet_cap must be -1 (all positions), 0 (default 3), or positive")
+	}
+	if c.Rules.Exhaustive && c.Output.Mode != "wordlist" {
+		return fmt.Errorf("exhaustive mode requires wordlist output")
+	}
 	for _, limit := range []struct {
 		name  string
 		value int

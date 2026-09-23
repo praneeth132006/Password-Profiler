@@ -22,21 +22,27 @@ const maxInputLines = 2000
 
 // A session is shared by the console, file CLI and browser. File contents stay local.
 type session struct {
-	MaxBytes  int
-	MaxRepeat int
-	Forbidden string
-	Blocklist []string
-	Keywords  []string
-	Sources   []string
-	Min       int
-	Max       int
-	Require   []string
-	Budget    int
-	Output    string
+	Exhaustive   bool
+	RepeatTokens bool
+	MaxCombine   int
+	Depth        int
+	Leet         string
+	LeetCap      int
+	MaxBytes     int
+	MaxRepeat    int
+	Forbidden    string
+	Blocklist    []string
+	Keywords     []string
+	Sources      []string
+	Min          int
+	Max          int
+	Require      []string
+	Budget       int
+	Output       string
 }
 
 func newSession() *session {
-	return &session{Min: 8, Max: 24, Require: []string{"upper", "lower", "digit", "special"}, Budget: 10000, Output: "passwords.txt"}
+	return &session{MaxCombine: 2, Depth: 2, Leet: "partial", Min: 8, Max: 24, Require: []string{"upper", "lower", "digit", "special"}, Budget: 100000, Output: "passwords.txt"}
 }
 
 func readWords(r io.Reader) ([]string, error) {
@@ -101,13 +107,13 @@ func (s *session) addFile(path, label string) error {
 	return s.add(f, label+" : "+path)
 }
 func (s *session) config() (*profile.Config, error) {
-	if s.Budget < 1 || s.Budget > 100000 {
-		return nil, fmt.Errorf("budget must be between 1 and 100000")
+	if s.Budget < 1 {
+		return nil, fmt.Errorf("budget must be positive")
 	}
 	if s.Min < 0 || s.Max < 0 || s.Max > 128 {
 		return nil, fmt.Errorf("minimum must be nonnegative and maximum must be 0–128 (0 is unlimited)")
 	}
-	cfg := profile.Config{Profile: profile.Profile{Keywords: s.Keywords}, Rules: profile.Rules{Case: []string{"lower", "capitalize", "upper"}, Leet: "partial", MaxCombine: 1, Depth: 2, Affixes: profile.Affixes{Suffixes: []string{"1!", "123!", strconv.Itoa(time.Now().Year()) + "!", "!", "123"}}}, Policy: profile.Policy{MinLen: s.Min, MaxLen: s.Max, Require: s.Require, MaxBytes: s.MaxBytes, MaxRepeat: s.MaxRepeat, Forbidden: s.Forbidden, Blocklist: s.Blocklist}, Output: profile.Output{Mode: "wordlist", File: s.Output, Budget: s.Budget, Dedupe: true}}
+	cfg := profile.Config{Profile: profile.Profile{Keywords: s.Keywords}, Rules: profile.Rules{Case: []string{"lower", "capitalize", "upper"}, Exhaustive: s.Exhaustive, RepeatTokens: s.RepeatTokens, LeetCap: s.LeetCap, Leet: s.Leet, MaxCombine: s.MaxCombine, Depth: s.Depth, Separators: []string{"", ".", "_", "-"}, Affixes: profile.Affixes{Suffixes: []string{"1!", "123!", strconv.Itoa(time.Now().Year()) + "!", "!", "123"}}}, Policy: profile.Policy{MinLen: s.Min, MaxLen: s.Max, Require: s.Require, MaxBytes: s.MaxBytes, MaxRepeat: s.MaxRepeat, Forbidden: s.Forbidden, Blocklist: s.Blocklist}, Output: profile.Output{Mode: "wordlist", File: s.Output, Budget: s.Budget, Dedupe: true}}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return nil, err
@@ -154,6 +160,12 @@ func newFilesCmd() *cobra.Command {
 		}
 		return s.run(cmd)
 	}}
+	cmd.Flags().BoolVar(&s.Exhaustive, "exhaustive", false, "complete the configured finite search without count/work/byte caps; exact dedup")
+	cmd.Flags().BoolVar(&s.RepeatTokens, "repeat-tokens", false, "allow the same token at multiple combination positions")
+	cmd.Flags().IntVar(&s.MaxCombine, "max-combine", s.MaxCombine, "maximum joined tokens (1–8)")
+	cmd.Flags().IntVar(&s.Depth, "depth", s.Depth, "mutation depth (1–8)")
+	cmd.Flags().StringVar(&s.Leet, "leet", s.Leet, "off|partial|full")
+	cmd.Flags().IntVar(&s.LeetCap, "leet-cap", 0, "full-leet positions: 0=3, -1=all")
 	cmd.Flags().StringVar(&policyPath, "policy", "", "standalone policy YAML; replaces all policy flags")
 	cmd.Flags().IntVar(&s.MaxBytes, "max-bytes", 0, "maximum UTF-8 bytes (0 is unlimited)")
 	cmd.Flags().IntVar(&s.MaxRepeat, "max-repeat", 0, "maximum consecutive identical characters (0 is unlimited)")
@@ -165,7 +177,7 @@ func newFilesCmd() *cobra.Command {
 	cmd.Flags().IntVar(&s.Min, "min-length", s.Min, "minimum password length in characters")
 	cmd.Flags().IntVar(&s.Max, "max-length", s.Max, "maximum password length in characters")
 	cmd.Flags().StringSliceVar(&s.Require, "require", s.Require, "required classes: upper,lower,digit,special; empty disables")
-	cmd.Flags().IntVar(&s.Budget, "budget", s.Budget, "maximum output candidates (1–100000)")
+	cmd.Flags().IntVar(&s.Budget, "budget", s.Budget, "maximum output candidates (ignored in exhaustive mode)")
 	cmd.Flags().StringVarP(&s.Output, "output", "o", s.Output, "destination text file (must not exist)")
 	return cmd
 }
@@ -178,7 +190,13 @@ const consoleHelp = `Commands:
   set min 8                        Minimum length
   set max 24                       Maximum length
   set require upper,lower,digit,special  (or none)
-  set budget 10000                 Maximum candidates (up to 100000)
+  set budget 100000                Maximum candidates
+  set exhaustive true              Remove count/work/byte caps; exact dedup
+  set max-combine 2                 Joined tokens (1–8)
+  set depth 2                       Chained mutations (1–8)
+  set leet full                     off|partial|full
+  set leet-cap -1                   All leet positions (0=3)
+  set repeat-tokens true            Allow repeated tokens
   set output /path/passwords.txt    New output file
   set max-bytes 72                  Optional byte limit (0 disables)
   set max-repeat 3                  Optional repeat limit (0 disables)
@@ -250,6 +268,7 @@ func runConsole(cmd *cobra.Command, _ []string) error {
 				fmt.Fprintln(out, "  "+source)
 			}
 			fmt.Fprintf(out, "Policy: %d–%d characters; require %s\nBudget: %d\nOutput: %s\n\n", s.Min, s.Max, strings.Join(s.Require, ","), s.Budget, s.Output)
+			fmt.Fprintf(out, "Search: combine=%d depth=%d leet=%s leet-cap=%d repeat=%t exhaustive=%t\n", s.MaxCombine, s.Depth, s.Leet, s.LeetCap, s.RepeatTokens, s.Exhaustive)
 			fmt.Fprintf(out, "Max bytes: %d; max repeats: %d; forbidden: %q; blocked passwords: %d\n", s.MaxBytes, s.MaxRepeat, s.Forbidden, len(s.Blocklist))
 		case "add":
 			kind, path, _ := strings.Cut(rest, " ")
@@ -268,6 +287,18 @@ func runConsole(cmd *cobra.Command, _ []string) error {
 			key, value, _ := strings.Cut(rest, " ")
 			value = strings.Trim(strings.TrimSpace(value), "\"'")
 			switch key {
+			case "exhaustive", "repeat-tokens":
+				var v bool
+				v, err = strconv.ParseBool(value)
+				if err == nil {
+					if key == "exhaustive" {
+						s.Exhaustive = v
+					} else {
+						s.RepeatTokens = v
+					}
+				}
+			case "leet":
+				s.Leet = value
 			case "forbidden":
 				s.Forbidden = value
 			case "output":
@@ -277,11 +308,17 @@ func runConsole(cmd *cobra.Command, _ []string) error {
 				if value != "none" && value != "" {
 					s.Require = strings.Split(value, ",")
 				}
-			case "min", "max", "budget", "max-bytes", "max-repeat":
+			case "min", "max", "budget", "max-bytes", "max-repeat", "max-combine", "depth", "leet-cap":
 				var n int
 				n, err = strconv.Atoi(value)
 				if err == nil {
 					switch key {
+					case "max-combine":
+						s.MaxCombine = n
+					case "depth":
+						s.Depth = n
+					case "leet-cap":
+						s.LeetCap = n
 					case "max-bytes":
 						s.MaxBytes = n
 					case "max-repeat":
@@ -354,7 +391,7 @@ func loadSession(path string) (*session, error) {
 	}
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
-	var doc savedSession
+	doc := savedSession{Session: *newSession()}
 	if err = dec.Decode(&doc); err != nil {
 		return nil, err
 	}

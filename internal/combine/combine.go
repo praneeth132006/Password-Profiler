@@ -8,11 +8,13 @@ import (
 )
 
 type Config struct {
-	MaxCombine  int
-	Separators  []string
-	Limit       int // maximum unique results; 0 disables this bound
-	MaxAttempts int // defaults to 1,000,000 visited complete paths
-	MaxBytes    int // 0 disables the intermediate UTF-8 byte bound
+	Exhaustive   bool
+	RepeatTokens bool
+	MaxCombine   int
+	Separators   []string
+	Limit        int // maximum unique results; 0 disables this bound
+	MaxAttempts  int // defaults to 1,000,000 visited complete paths
+	MaxBytes     int // 0 disables the intermediate UTF-8 byte bound
 }
 
 type Result struct {
@@ -42,7 +44,7 @@ func Walk(ctx context.Context, toks []string, cfg Config, visit func(string) boo
 	if maxK < 1 {
 		maxK = 1
 	}
-	if maxK > len(toks) {
+	if !cfg.RepeatTokens && maxK > len(toks) {
 		maxK = len(toks)
 	}
 	maxAttempts := cfg.MaxAttempts
@@ -53,7 +55,7 @@ func Walk(ctx context.Context, toks []string, cfg Config, visit func(string) boo
 		if ctx.Err() != nil {
 			return false
 		}
-		if res.Attempts >= maxAttempts {
+		if !cfg.Exhaustive && res.Attempts >= maxAttempts {
 			res.WorkLimited = true
 			return false
 		}
@@ -64,14 +66,14 @@ func Walk(ctx context.Context, toks []string, cfg Config, visit func(string) boo
 		if !tick() {
 			return false
 		}
-		if cfg.MaxBytes > 0 && len(s) > cfg.MaxBytes {
+		if !cfg.Exhaustive && cfg.MaxBytes > 0 && len(s) > cfg.MaxBytes {
 			res.Oversized++
 			return true
 		}
 		if _, ok := seen[s]; ok {
 			return true
 		}
-		if cfg.Limit > 0 && res.Count >= cfg.Limit {
+		if !cfg.Exhaustive && cfg.Limit > 0 && res.Count >= cfg.Limit {
 			res.Capped = true
 			return false
 		}
@@ -102,7 +104,7 @@ func Walk(ctx context.Context, toks []string, cfg Config, visit func(string) boo
 			return false
 		}
 		if depth == target {
-			if cfg.MaxBytes > 0 {
+			if !cfg.Exhaustive && cfg.MaxBytes > 0 {
 				total := 0
 				for i, part := range path[:target] {
 					extra := len(part)
@@ -122,7 +124,7 @@ func Walk(ctx context.Context, toks []string, cfg Config, visit func(string) boo
 			return emit(strings.Join(path[:target], sep), false)
 		}
 		for i, t := range toks {
-			if used[i] {
+			if !cfg.RepeatTokens && used[i] {
 				continue
 			}
 			used[i] = true

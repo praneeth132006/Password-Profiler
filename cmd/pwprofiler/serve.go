@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed web/index.html
@@ -92,7 +93,7 @@ func webHandler(host string) http.Handler {
 				return
 			}
 		}
-		if r.URL.Path != "/api/generate" {
+		if r.URL.Path != "/api/generate" && r.URL.Path != "/api/config" {
 			http.NotFound(w, r)
 			return
 		}
@@ -137,6 +138,24 @@ func webHandler(host string) http.Handler {
 				}
 			}
 		}
+		for key, dest := range map[string]*int{"max_combine": &s.MaxCombine, "depth": &s.Depth, "leet_cap": &s.LeetCap} {
+			if value := r.FormValue(key); value != "" {
+				*dest, err = strconv.Atoi(value)
+				if err != nil {
+					http.Error(w, "Invalid "+key, 400)
+					return
+				}
+			}
+		}
+		if value := r.FormValue("leet"); value != "" {
+			s.Leet = value
+		}
+		s.RepeatTokens = r.FormValue("repeat_tokens") == "on"
+		s.Exhaustive = r.URL.Path == "/api/config"
+		if !s.Exhaustive && s.Budget > 100000 {
+			http.Error(w, "Browser downloads support up to 100000 candidates; export a CLI configuration for larger runs", 400)
+			return
+		}
 		s.Forbidden = r.FormValue("forbidden")
 		for _, word := range strings.Split(strings.ReplaceAll(r.FormValue("blocklist"), "\r\n", "\n"), "\n") {
 			if word != "" {
@@ -168,6 +187,18 @@ func webHandler(host string) http.Handler {
 		cfg, err := s.config()
 		if err != nil {
 			http.Error(w, err.Error(), 400)
+			return
+		}
+		if r.URL.Path == "/api/config" {
+			cfg.Output.File = "passwords.txt"
+			data, e := yaml.Marshal(cfg)
+			if e != nil {
+				http.Error(w, e.Error(), 500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/yaml")
+			w.Header().Set("Content-Disposition", `attachment; filename="audit.yaml"`)
+			_, _ = w.Write(data)
 			return
 		}
 		var result, stats bytes.Buffer
