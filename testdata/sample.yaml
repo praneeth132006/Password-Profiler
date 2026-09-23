@@ -20,6 +20,11 @@ rules:
     suffixes: ["123", "!", "@", "01"]
   max_combine: 2
   depth: 3
+  combine_limit: 100000
+  combine_attempts: 1000000
+  max_variants: 10000
+  max_attempts: 100000
+  max_candidate_bytes: 4096
 
 policy:
   min_len: 8

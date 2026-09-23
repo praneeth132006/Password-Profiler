@@ -7,7 +7,7 @@ amd64 package by default; `ARCH=arm64 make deb` cross-compiles ARM64. Set
 Install the generated file with:
 
 ```sh
-sudo apt install ./dist/pwprofiler_0.3.0_amd64.deb
+sudo apt install ./dist/pwprofiler_0.4.0_amd64.deb
 ```
 
 The application runs as the invoking user, without a background service or

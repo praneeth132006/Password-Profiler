@@ -1,6 +1,9 @@
 package mutate
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // LeetPair is one lowercase base rune and its leet substitutions, primary first.
 type LeetPair struct {
@@ -143,9 +146,35 @@ func substituteAllPrimary(runes []rune) string {
 	return b.String()
 }
 
+// walkLeet propagates cancellation/consumer stop through full-leet enumeration;
+// it never allocates a slice containing all combinations.
+func walkLeet(ctx context.Context, s, mode string, cap int, visit func(string) bool) bool {
+	switch mode {
+	case "partial":
+		for _, v := range leetPartial(s) {
+			if ctx.Err() != nil || !visit(v) {
+				return false
+			}
+		}
+		return true
+	case "full":
+		if cap <= 0 {
+			cap = defaultLeetCap
+		}
+		return walkLeetFull(ctx, s, cap, visit)
+	default:
+		return ctx.Err() == nil
+	}
+}
+
 func leetFull(s string, cap int) []string {
+	var out []string
+	walkLeetFull(context.Background(), s, cap, func(v string) bool { out = append(out, v); return true })
+	return out
+}
+
+func walkLeetFull(ctx context.Context, s string, cap int, visit func(string) bool) bool {
 	runes := []rune(s)
-	// Positions that can be substituted.
 	var positions []int
 	for i, r := range runes {
 		if _, ok := leetSubs[leetKey(r)]; ok {
@@ -153,41 +182,34 @@ func leetFull(s string, cap int) []string {
 		}
 	}
 	if len(positions) == 0 {
-		return nil
+		return true
 	}
-
-	out := make([]string, 0)
-	seen := make(map[string]struct{})
-	work := make([]rune, len(runes))
-	copy(work, runes)
-
-	var recurse func(pi, subsLeft int)
-	recurse = func(pi, subsLeft int) {
-		if pi == len(positions) {
-			v := string(work)
-			if v == s {
-				return
+	work := append([]rune(nil), runes...)
+	var recurse func(int, int, bool) bool
+	recurse = func(pi, left int, changed bool) bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		if pi == len(positions) || left == 0 {
+			if changed {
+				return visit(string(work))
 			}
-			if _, ok := seen[v]; ok {
-				return
-			}
-			seen[v] = struct{}{}
-			out = append(out, v)
-			return
+			return true
 		}
 		pos := positions[pi]
 		orig := work[pos]
-		// Keep original at this position.
-		recurse(pi+1, subsLeft)
-		// Or substitute, if budget remains.
-		if subsLeft > 0 {
-			for _, sub := range leetSubs[leetKey(orig)] {
-				work[pos] = sub
-				recurse(pi+1, subsLeft-1)
-			}
-			work[pos] = orig
+		if !recurse(pi+1, left, changed) {
+			return false
 		}
+		for _, sub := range leetSubs[leetKey(orig)] {
+			work[pos] = sub
+			if !recurse(pi+1, left-1, true) {
+				work[pos] = orig
+				return false
+			}
+		}
+		work[pos] = orig
+		return true
 	}
-	recurse(0, cap)
-	return out
+	return recurse(0, cap, false)
 }

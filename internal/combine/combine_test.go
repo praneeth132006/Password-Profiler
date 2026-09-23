@@ -1,6 +1,7 @@
 package combine
 
 import (
+	"context"
 	"reflect"
 	"sort"
 	"testing"
@@ -113,5 +114,24 @@ func TestGenerateDeterministicAndUnique(t *testing.T) {
 		if sorted[i] == sorted[i-1] {
 			t.Errorf("duplicate token %q", sorted[i])
 		}
+	}
+}
+
+func TestWalkStopsAndBoundsWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	seen := 0
+	res, err := Walk(ctx, []string{"a", "b", "c"}, Config{MaxCombine: 3}, func(string) bool { seen++; return seen < 2 })
+	if err != nil || seen != 2 || res.Attempts != 2 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	res, err = Walk(ctx, []string{"a", "a", "a"}, Config{MaxCombine: 3, MaxAttempts: 5}, func(string) bool { return true })
+	if err != nil || !res.WorkLimited || res.Attempts != 5 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	cancel()
+	_, err = Walk(ctx, []string{"a", "b"}, Config{MaxCombine: 2}, func(string) bool { t.Fatal("emitted after cancellation"); return true })
+	if err != context.Canceled {
+		t.Fatal(err)
 	}
 }

@@ -1,130 +1,160 @@
-// Package combine expands base tokens into a larger token set by joining them
-// together: the singles unchanged, then bounded ordered concatenations of
-// distinct tokens using a configurable separator set (e.g. "", ".", "_").
-//
-// It sits between the tokens and mutate stages of the pipeline. Combination is
-// the fastest-exploding stage, so it is bounded two ways: MaxCombine caps how
-// many tokens may be joined, and Limit caps the total number of emitted
-// combinations (a naive run must never fill memory before the output budget
-// even applies). Output is deterministic and de-duplicated.
+// Package combine lazily traverses ordered combinations of distinct tokens.
 package combine
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
 
-// Config controls combination.
 type Config struct {
-	// MaxCombine is the maximum number of tokens joined into one combination.
-	// 1 => singles only. Values < 1 are treated as 1.
-	MaxCombine int
-	// Separators are inserted between joined tokens. Each separator produces
-	// its own set of combinations. Empty => {""} (bare concatenation).
-	Separators []string
-	// Limit caps the number of emitted combinations. 0 => unlimited. When the
-	// limit is reached, generation stops cleanly and Result.Capped is true.
-	Limit int
+	MaxCombine  int
+	Separators  []string
+	Limit       int // maximum unique results; 0 disables this bound
+	MaxAttempts int // defaults to 1,000,000 visited complete paths
+	MaxBytes    int // 0 disables the intermediate UTF-8 byte bound
 }
 
-// Result carries the combined tokens plus a report of what happened.
 type Result struct {
-	Tokens  []string // combined tokens, deterministic and de-duplicated
-	Singles int      // number of length-1 tokens emitted
-	Capped  bool     // true if Limit stopped generation early
+	Tokens      []string // populated only by Generate, not Walk
+	Singles     int
+	Count       int
+	Attempts    int
+	Oversized   int
+	Capped      bool
+	WorkLimited bool
 }
 
-// Generate expands toks according to cfg. toks is expected to already be
-// unique and sorted (as produced by the tokens stage); that ordering, together
-// with the separator order, makes the output deterministic.
+// Generate collects Walk for compatibility with callers needing all combinations.
 func Generate(toks []string, cfg Config) Result {
+	var values []string
+	res, _ := Walk(context.Background(), toks, cfg, func(s string) bool { values = append(values, s); return true })
+	res.Tokens = values
+	return res
+}
+
+// Walk preserves separator/length/lexicographic path ordering without storing the
+// previous breadth level or reserving n*n nodes. false from visit stops immediately.
+func Walk(ctx context.Context, toks []string, cfg Config, visit func(string) bool) (Result, error) {
+	res := Result{}
+	seen := map[string]struct{}{}
 	maxK := cfg.MaxCombine
 	if maxK < 1 {
 		maxK = 1
+	}
+	if maxK > len(toks) {
+		maxK = len(toks)
+	}
+	maxAttempts := cfg.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1000000
+	}
+	tick := func() bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		if res.Attempts >= maxAttempts {
+			res.WorkLimited = true
+			return false
+		}
+		res.Attempts++
+		return true
+	}
+	emit := func(s string, single bool) bool {
+		if !tick() {
+			return false
+		}
+		if cfg.MaxBytes > 0 && len(s) > cfg.MaxBytes {
+			res.Oversized++
+			return true
+		}
+		if _, ok := seen[s]; ok {
+			return true
+		}
+		if cfg.Limit > 0 && res.Count >= cfg.Limit {
+			res.Capped = true
+			return false
+		}
+		seen[s] = struct{}{}
+		res.Count++
+		if single {
+			res.Singles++
+		}
+		return visit(s)
+	}
+	for _, t := range toks {
+		if !emit(t, true) {
+			return res, ctx.Err()
+		}
+	}
+	if maxK < 2 {
+		return res, ctx.Err()
 	}
 	seps := cfg.Separators
 	if len(seps) == 0 {
 		seps = []string{""}
 	}
-
-	res := Result{}
-	seen := make(map[string]struct{})
-	// add returns false once the limit is reached, signalling callers to stop.
-	add := func(s string) bool {
-		if _, ok := seen[s]; ok {
-			return true
-		}
-		if cfg.Limit > 0 && len(res.Tokens) >= cfg.Limit {
-			res.Capped = true
+	used := make([]bool, len(toks))
+	path := make([]string, maxK)
+	var walk func(int, int, string) bool
+	walk = func(depth, target int, sep string) bool {
+		if ctx.Err() != nil {
 			return false
 		}
-		seen[s] = struct{}{}
-		res.Tokens = append(res.Tokens, s)
-		return true
-	}
-
-	// Singles first — separator-independent, emitted exactly once.
-	for _, t := range toks {
-		if !add(t) {
-			return res
-		}
-		res.Singles++
-	}
-
-	if maxK < 2 || len(toks) < 2 {
-		return res
-	}
-
-	// For each separator, breadth-first extend ordered paths of distinct token
-	// indices from length 1 up to maxK, carrying the joined string so each
-	// extension is a single concatenation.
-	type node struct {
-		idxs []int
-		str  string
-	}
-	for _, sep := range seps {
-		level := make([]node, 0, len(toks))
-		for i, t := range toks {
-			level = append(level, node{idxs: []int{i}, str: t})
-		}
-		for k := 2; k <= maxK; k++ {
-			next := make([]node, 0, len(level)*len(toks))
-			for _, nd := range level {
-				for j := range toks {
-					if containsIdx(nd.idxs, j) {
-						continue
+		if depth == target {
+			if cfg.MaxBytes > 0 {
+				total := 0
+				for i, part := range path[:target] {
+					extra := len(part)
+					if i > 0 {
+						extra += len(sep)
 					}
-					joined := nd.str + sep + toks[j]
-					if !add(joined) {
-						return res
+					if extra > cfg.MaxBytes-total {
+						if !tick() {
+							return false
+						}
+						res.Oversized++
+						return true
 					}
-					child := node{
-						idxs: append(append(make([]int, 0, len(nd.idxs)+1), nd.idxs...), j),
-						str:  joined,
-					}
-					next = append(next, child)
+					total += extra
 				}
 			}
-			level = next
-			if len(level) == 0 {
-				break
+			return emit(strings.Join(path[:target], sep), false)
+		}
+		for i, t := range toks {
+			if used[i] {
+				continue
+			}
+			used[i] = true
+			path[depth] = t
+			ok := walk(depth+1, target, sep)
+			used[i] = false
+			if !ok {
+				return false
+			}
+		}
+		return true
+	}
+	for _, sep := range seps {
+		for k := 2; k <= maxK; k++ {
+			if !walk(0, k, sep) {
+				return res, ctx.Err()
 			}
 		}
 	}
-	return res
+	return res, ctx.Err()
 }
 
-func containsIdx(idxs []int, j int) bool {
-	for _, i := range idxs {
-		if i == j {
-			return true
-		}
-	}
-	return false
-}
-
-// Describe returns a short human-readable summary of a Result for stats output.
 func (r Result) Describe() string {
-	s := fmt.Sprintf("combined=%d (singles=%d)", len(r.Tokens), r.Singles)
+	s := fmt.Sprintf("combined=%d (singles=%d)", r.Count, r.Singles)
 	if r.Capped {
 		s += " [combine LIMIT reached]"
+	}
+	if r.WorkLimited {
+		s += " [combine WORK LIMIT reached]"
+	}
+	if r.Oversized > 0 {
+		s += fmt.Sprintf(" [%d combinations exceeded byte limit]", r.Oversized)
 	}
 	return s
 }

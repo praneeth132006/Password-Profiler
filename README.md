@@ -111,6 +111,17 @@ restrictive policies may yield fewer or zero matches. Zero matches return an
 error instead of leaving an empty file. File output refuses to overwrite
 existing files and uses owner-only permissions on Unix.
 
+## Streaming generation engine
+
+The generator now produces combinations and mutations on demand, stopping work
+as soon as the output budget is reached. Full leetspeak no longer materializes
+all substitutions first. Search limits independently bound mutation states,
+attempts and intermediate size, with explicit partial-coverage notices.
+A small output budget can still search later input words that match the policy.
+
+See [algorithm design, research and benchmarks](docs/ALGORITHM.md) for settings,
+compatibility guarantees, performance measurements and their limitations.
+
 ## Reusable policies, sessions and verification
 
 - **Advanced policies:** exact password blocklists, forbidden characters,
@@ -141,7 +152,7 @@ On Debian/Ubuntu with Go and `dpkg-dev` installed, build a local package:
 ```bash
 make deb                                  # amd64 by default
 ARCH=arm64 make deb                       # optional ARM64 package
-sudo apt install ./dist/pwprofiler_0.3.0_amd64.deb
+sudo apt install ./dist/pwprofiler_0.4.0_amd64.deb
 pwprofiler console
 pwprofiler serve
 ```
@@ -190,7 +201,7 @@ Flags:
       --dedup string     dedup strategy: auto|exact|bloom (default "auto")
 ```
 
-For large runs, `--workers N` parallelizes mutation across N goroutines (a single
+For large runs, `--workers N` (1–64) parallelizes mutation across N goroutines (a single
 consumer still serializes writes, so output is correct but unordered), and
 `--dedup bloom` keeps memory bounded regardless of output size. `auto` (the
 default) switches to a Bloom filter once the budget is large.

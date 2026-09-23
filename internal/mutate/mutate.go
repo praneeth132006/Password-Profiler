@@ -9,8 +9,15 @@
 // lists, the depth cap, and (upstream) the global budget.
 package mutate
 
+import "context"
+
 // Config controls a mutation run.
 type Config struct {
+	// MaxVariants and MaxAttempts bound retained states and attempted mutations per token.
+	// Zero values select defaults: 10,000 states, 100,000 attempts, 4,096 UTF-8 bytes.
+	MaxVariants int
+	MaxAttempts int
+	MaxBytes    int
 	// Cases are the seed case transforms applied to each token, by name. The
 	// resulting cased forms are the starting points for chaining.
 	Cases []string
@@ -54,69 +61,121 @@ func NewEngine(cfg Config) *Engine {
 	return &Engine{cfg: cfg, cases: cases, depth: depth}
 }
 
-// Expand produces the candidate list for a single base token. The output is
-// deterministic and de-duplicated: case seeds first (in configured order),
-// then breadth-first chained mutations up to the depth cap.
-func (e *Engine) Expand(token string) []string {
-	if token == "" {
-		return nil
-	}
+// WalkStats records actual search work, including explicit completeness limits.
+type WalkStats struct {
+	Attempts  int
+	Unique    int
+	Limited   bool
+	Oversized int
+}
 
-	result := make([]string, 0, 16)
-	seen := make(map[string]struct{})
-	add := func(s string) bool {
-		if s == "" {
+// Expand is the bounded compatibility collector. Prefer Walk for early termination
+// and visibility into limits. Both preserve the historical breadth-first ordering.
+func (e *Engine) Expand(token string) []string {
+	var out []string
+	_, _ = e.Walk(context.Background(), token, func(s string) bool { out = append(out, s); return true })
+	return out
+}
+
+// Walk emits a unique candidate as soon as it is discovered. Returning false from
+// visit stops the search immediately. Policy rejection must NOT stop exploration:
+// a later transform can repair a rejected intermediate value.
+func (e *Engine) Walk(ctx context.Context, token string, visit func(string) bool) (WalkStats, error) {
+	stats := WalkStats{}
+	maxVariants, maxAttempts, maxBytes := e.cfg.MaxVariants, e.cfg.MaxAttempts, e.cfg.MaxBytes
+	if maxVariants <= 0 {
+		maxVariants = 10000
+	}
+	if maxAttempts <= 0 {
+		maxAttempts = 100000
+	}
+	if maxBytes <= 0 {
+		maxBytes = 4096
+	}
+	if err := ctx.Err(); err != nil {
+		return stats, err
+	}
+	if token == "" {
+		return stats, nil
+	}
+	if len(token) > maxBytes {
+		stats.Oversized++
+		return stats, nil
+	}
+	type node struct {
+		value string
+		depth int
+	}
+	var queue []node
+	seen := map[string]struct{}{}
+	add := func(s string, depth int) bool {
+		if ctx.Err() != nil {
 			return false
 		}
+		if stats.Attempts >= maxAttempts {
+			stats.Limited = true
+			return false
+		}
+		stats.Attempts++
+		if s == "" {
+			return true
+		}
+		if len(s) > maxBytes {
+			stats.Oversized++
+			return true
+		}
 		if _, ok := seen[s]; ok {
+			return true
+		}
+		if stats.Unique >= maxVariants {
+			stats.Limited = true
 			return false
 		}
 		seen[s] = struct{}{}
-		result = append(result, s)
+		stats.Unique++
+		if !visit(s) {
+			return false
+		}
+		if depth < e.depth {
+			queue = append(queue, node{s, depth})
+		}
 		return true
 	}
-
-	// Case seeds are candidates in their own right and the roots of chaining.
-	var frontier []string
 	for _, cf := range e.cases {
-		s := cf(token)
-		if add(s) {
-			frontier = append(frontier, s)
+		if !add(cf(token), 0) {
+			return stats, ctx.Err()
 		}
 	}
-
-	// Breadth-first chaining: each level applies one more atomic mutation.
-	for level := 0; level < e.depth && len(frontier) > 0; level++ {
-		var next []string
-		for _, s := range frontier {
-			for _, child := range e.atomic(s) {
-				if add(child) {
-					next = append(next, child)
-				}
-			}
+	for head := 0; head < len(queue); head++ {
+		nd := queue[head]
+		queue[head] = node{}
+		if !e.walkAtomic(ctx, nd.value, func(s string) bool { return add(s, nd.depth+1) }) {
+			return stats, ctx.Err()
 		}
-		frontier = next
 	}
-	return result
+	return stats, ctx.Err()
 }
 
-// atomic returns every single-step mutation of s (never s itself), in a
-// deterministic family order: leet, append, prepend, structural.
-func (e *Engine) atomic(s string) []string {
-	out := make([]string, 0, 8)
-	out = append(out, leetVariants(s, e.cfg.Leet, e.cfg.LeetCap)...)
+func (e *Engine) walkAtomic(ctx context.Context, s string, visit func(string) bool) bool {
+	if !walkLeet(ctx, s, e.cfg.Leet, e.cfg.LeetCap, visit) {
+		return false
+	}
 	for _, a := range e.cfg.Append {
-		if a != "" {
-			out = append(out, s+a)
+		if a != "" && !visit(s+a) {
+			return false
 		}
 	}
 	for _, p := range e.cfg.Prepend {
-		if p != "" {
-			out = append(out, p+s)
+		if p != "" && !visit(p+s) {
+			return false
 		}
 	}
 	if e.cfg.Structural {
-		out = append(out, structuralVariants(s)...)
+		for _, v := range structuralVariants(s) {
+			if !visit(v) {
+				return false
+			}
+		}
 	}
-	return out
+	return ctx.Err() == nil
 }

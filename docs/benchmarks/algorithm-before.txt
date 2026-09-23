@@ -1,0 +1,10 @@
+Baseline: commit 0461dde, using the benchmark fixtures added in v0.4.0.
+Host: darwin/arm64, Apple M4. Go 1.27.1.
+Command: go test ./cmd/pwprofiler ./internal/combine -run '^$' -bench 'Benchmark(GenerationBudget|SmallLimit)$' -benchmem -benchtime=200ms -count=3
+
+BenchmarkGenerationBudget-10  6  39642430 ns/op  59044960 B/op  317141 allocs/op
+BenchmarkGenerationBudget-10  6  52485681 ns/op  59072442 B/op  317144 allocs/op
+BenchmarkGenerationBudget-10  6  41919917 ns/op  58953882 B/op  317134 allocs/op
+BenchmarkSmallLimit-10  936   236432 ns/op  10100296 B/op  548 allocs/op
+BenchmarkSmallLimit-10  1069  232756 ns/op  10100295 B/op  548 allocs/op
+BenchmarkSmallLimit-10  1038  251602 ns/op  10100298 B/op  548 allocs/op

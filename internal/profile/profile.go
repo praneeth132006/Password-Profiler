@@ -38,12 +38,17 @@ type Profile struct {
 
 // Rules configures the mutation and combination stages.
 type Rules struct {
-	Case       []string `yaml:"case"`       // lower | upper | capitalize | toggle | invert | identity
-	Leet       string   `yaml:"leet"`       // off | partial | full
-	Separators []string `yaml:"separators"` // e.g. "", ".", "_"
-	Affixes    Affixes  `yaml:"affixes"`
-	MaxCombine int      `yaml:"max_combine"` // max tokens joined in one candidate
-	Depth      int      `yaml:"depth"`       // max chained mutations
+	MaxVariants       int      `yaml:"max_variants"`
+	MaxAttempts       int      `yaml:"max_attempts"`
+	MaxCandidateBytes int      `yaml:"max_candidate_bytes"`
+	CombineLimit      int      `yaml:"combine_limit"`
+	CombineAttempts   int      `yaml:"combine_attempts"`
+	Case              []string `yaml:"case"`       // lower | upper | capitalize | toggle | invert | identity
+	Leet              string   `yaml:"leet"`       // off | partial | full
+	Separators        []string `yaml:"separators"` // e.g. "", ".", "_"
+	Affixes           Affixes  `yaml:"affixes"`
+	MaxCombine        int      `yaml:"max_combine"` // max tokens joined in one candidate
+	Depth             int      `yaml:"depth"`       // max chained mutations
 }
 
 // Affixes configures prepend/append material.
@@ -108,6 +113,21 @@ func Parse(raw []byte) (*Config, error) {
 
 // applyDefaults fills in safe defaults for omitted fields.
 func (c *Config) applyDefaults() {
+	if c.Rules.MaxVariants == 0 {
+		c.Rules.MaxVariants = 10000
+	}
+	if c.Rules.MaxAttempts == 0 {
+		c.Rules.MaxAttempts = 100000
+	}
+	if c.Rules.MaxCandidateBytes == 0 {
+		c.Rules.MaxCandidateBytes = 4096
+	}
+	if c.Rules.CombineLimit == 0 {
+		c.Rules.CombineLimit = 100000
+	}
+	if c.Rules.CombineAttempts == 0 {
+		c.Rules.CombineAttempts = 1000000
+	}
 	if c.Rules.Leet == "" {
 		c.Rules.Leet = "off"
 	}
@@ -132,6 +152,20 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) validate() error {
+	for _, limit := range []struct {
+		name  string
+		value int
+	}{{"max_variants", c.Rules.MaxVariants}, {"max_attempts", c.Rules.MaxAttempts}, {"max_candidate_bytes", c.Rules.MaxCandidateBytes}, {"combine_limit", c.Rules.CombineLimit}, {"combine_attempts", c.Rules.CombineAttempts}} {
+		if limit.value < 1 {
+			return fmt.Errorf("rules.%s must be positive", limit.name)
+		}
+	}
+	if c.Rules.MaxCombine > 8 {
+		return fmt.Errorf("rules.max_combine must be between 1 and 8")
+	}
+	if c.Rules.Depth > 8 {
+		return fmt.Errorf("rules.depth must be between 1 and 8")
+	}
 	if c.Output.Budget < 0 {
 		return fmt.Errorf("output.budget must be positive")
 	}

@@ -128,3 +128,18 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchLimitValidation(t *testing.T) {
+	for _, setting := range []string{"max_variants: -1", "max_attempts: -1", "combine_limit: -1", "combine_attempts: -1", "max_candidate_bytes: -1", "depth: 9", "max_combine: 9"} {
+		if _, err := Parse([]byte("profile:\n  keywords: [test]\nrules:\n  " + setting + "\n")); err == nil {
+			t.Fatalf("accepted %s", setting)
+		}
+	}
+	cfg, err := Parse([]byte("profile:\n  keywords: [test]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Rules.MaxVariants != 10000 || cfg.Rules.MaxAttempts != 100000 || cfg.Rules.CombineLimit != 100000 || cfg.Rules.CombineAttempts != 1000000 || cfg.Rules.MaxCandidateBytes != 4096 {
+		t.Fatalf("unexpected limits %+v", cfg.Rules)
+	}
+}

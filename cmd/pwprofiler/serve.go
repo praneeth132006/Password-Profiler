@@ -177,7 +177,8 @@ func webHandler(host string) http.Handler {
 		cmd.SetContext(ctx)
 		cmd.SetOut(&result)
 		cmd.SetErr(&stats)
-		if err = runWordlist(cmd, cfg, genOpts{workers: 1, dedup: "exact"}); err != nil {
+		report := &generationReport{}
+		if err = runWordlist(cmd, cfg, genOpts{workers: 1, dedup: "exact", report: report}); err != nil {
 			http.Error(w, err.Error(), 422)
 			return
 		}
@@ -189,6 +190,7 @@ func webHandler(host string) http.Handler {
 		w.Header().Set("Content-Disposition", `attachment; filename="passwords.txt"`)
 		count := bytes.Count(result.Bytes(), []byte{'\n'})
 		w.Header().Set("X-Candidate-Count", strconv.Itoa(count))
+		w.Header().Set("X-Search-Limited", strconv.FormatBool(report.SearchLimited))
 		w.Header().Set("X-Limit-Reached", strconv.FormatBool(count >= s.Budget))
 		_, _ = w.Write(result.Bytes())
 	})

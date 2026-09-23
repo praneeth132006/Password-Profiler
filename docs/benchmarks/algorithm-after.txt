@@ -1,0 +1,10 @@
+Streaming implementation: v0.4.0 working tree, September 23, 2026.
+Host: darwin/arm64, Apple M4. Go 1.27.1.
+Command: go test ./cmd/pwprofiler ./internal/combine -run '^$' -bench 'Benchmark(GenerationBudget|SmallLimit)$' -benchmem -benchtime=200ms -count=3
+
+BenchmarkGenerationBudget-10  808  259716 ns/op  281417 B/op  2216 allocs/op
+BenchmarkGenerationBudget-10  951  254170 ns/op  281417 B/op  2216 allocs/op
+BenchmarkGenerationBudget-10  884  265959 ns/op  281418 B/op  2216 allocs/op
+BenchmarkSmallLimit-10  9446  23142 ns/op  73776 B/op  38 allocs/op
+BenchmarkSmallLimit-10  9884  23278 ns/op  73776 B/op  38 allocs/op
+BenchmarkSmallLimit-10  9288  23129 ns/op  73776 B/op  38 allocs/op

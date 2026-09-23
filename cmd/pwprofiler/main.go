@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/praneeth132006/Password-Profiler/internal/combine"
@@ -28,7 +28,7 @@ import (
 )
 
 // version is overrideable at build time via -ldflags "-X main.version=...".
-var version = "0.3.0"
+var version = "0.4.0"
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
@@ -54,7 +54,8 @@ func newRootCmd() *cobra.Command {
 
 // genOpts carries CLI-only knobs (not part of the config schema) for scale.
 type genOpts struct {
-	workers int    // mutation worker goroutines (>1 trades output ordering for speed)
+	workers int // mutation worker goroutines (>1 trades output ordering for speed)
+	report  *generationReport
 	dedup   string // auto | exact | bloom
 }
 
@@ -80,8 +81,8 @@ func newGenerateCmd() *cobra.Command {
 			if outPath != "" {
 				cfg.Output.File = outPath
 			}
-			if opts.workers < 1 {
-				opts.workers = 1
+			if opts.workers < 1 || opts.workers > 64 {
+				return fmt.Errorf("--workers must be between 1 and 64")
 			}
 			switch opts.dedup {
 			case "", "auto", "exact", "bloom":
@@ -170,13 +171,22 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr 
 		sink = cmd.OutOrStdout()
 	}
 
-	combined := combine.Generate(base, combine.Config{
-		MaxCombine: cfg.Rules.MaxCombine,
-		Separators: cfg.Rules.Separators,
-		Limit:      cfg.Output.Budget, // guard against combination explosion
-	})
+	parent := cmd.Context()
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt)
+	defer stop()
+	var combined combine.Result
+	source := func(sourceCtx context.Context, yield func(string) bool) error {
+		var err error
+		combined, err = combine.Walk(sourceCtx, base, combine.Config{MaxCombine: cfg.Rules.MaxCombine, Separators: cfg.Rules.Separators, Limit: cfg.Rules.CombineLimit, MaxAttempts: cfg.Rules.CombineAttempts, MaxBytes: cfg.Rules.MaxCandidateBytes}, yield)
+		return err
+	}
+
 	appendAffixes, prependAffixes := buildAffixes(cfg)
 	eng := mutate.NewEngine(mutate.Config{
+		MaxVariants: cfg.Rules.MaxVariants, MaxAttempts: cfg.Rules.MaxAttempts, MaxBytes: cfg.Rules.MaxCandidateBytes,
 		Cases:      cfg.Rules.Case,
 		Leet:       cfg.Rules.Leet,
 		Append:     appendAffixes,
@@ -188,13 +198,15 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr 
 	w := output.New(sink, buildDeduper(cfg, opts.dedup), cfg.Output.Budget)
 
 	start := time.Now()
-	var filtered int
-	var err error
-	if opts.workers <= 1 {
-		filtered, err = expandSequentialContext(cmd.Context(), combined.Tokens, eng, pol, w)
-	} else {
-		filtered, err = expand(combined.Tokens, eng, pol, w, opts.workers)
+	search, err := expandStream(ctx, source, eng, pol, w, opts.workers)
+	limited := search.LimitedTokens > 0 || search.Oversized > 0 || combined.Capped || combined.WorkLimited || combined.Oversized > 0
+	if opts.report != nil {
+		opts.report.SearchLimited = limited
 	}
+	if limited {
+		fmt.Fprintf(cmd.ErrOrStderr(), "pwprofiler: search limits reached (mutation-limited tokens=%d; oversized mutations=%d; %s); coverage is incomplete\n", search.LimitedTokens, search.Oversized, combined.Describe())
+	}
+
 	if err != nil {
 		return err
 	}
@@ -203,138 +215,22 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr 
 		return err
 	}
 	if stats.Emitted == 0 {
-		return fmt.Errorf("no candidates match the password policy; add input words or adjust the policy")
+		if limited {
+			return fmt.Errorf("no matching candidates found before search limits were reached; increase search limits or adjust inputs")
+		}
+		return fmt.Errorf("no generated candidates match the password policy; add input words or adjust the policy")
 	}
 	elapsed := time.Since(start)
 
 	fmt.Fprintf(cmd.ErrOrStderr(),
 		"pwprofiler: %d base tokens -> %s -> %d candidates emitted (%d duplicates suppressed%s)%s\n",
 		len(base), combined.Describe(), stats.Emitted, stats.Duplicates,
-		policyNote(pol, filtered), budgetNote(stats.BudgetHit, cfg.Output.Budget))
+		policyNote(pol, search.Filtered), budgetNote(stats.BudgetHit, cfg.Output.Budget))
 	fmt.Fprintf(cmd.ErrOrStderr(),
 		"           dedup=%s workers=%d, %s in %s (%.0f cand/s)\n",
 		w.DedupKind(), opts.workers, humanCount(stats.Emitted), elapsed.Round(time.Millisecond),
 		ratePerSec(stats.Emitted, elapsed))
 	return nil
-}
-
-// expand feeds every token's mutations through the policy filter into the
-// writer. With workers == 1 it is sequential and deterministic; with workers
-// > 1 a pool of goroutines runs the (pure) mutation + policy work in parallel
-// while a single consumer serializes writes — faster, but output order is no
-// longer guaranteed. Returns the number of candidates rejected by policy.
-func expand(toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer, workers int) (int, error) {
-	if workers <= 1 {
-		return expandSequential(toks, eng, pol, w)
-	}
-	return expandConcurrent(toks, eng, pol, w, workers)
-}
-
-func expandSequential(toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer) (int, error) {
-	return expandSequentialContext(context.Background(), toks, eng, pol, w)
-}
-
-func expandSequentialContext(ctx context.Context, toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer) (int, error) {
-	var filtered int
-	for _, tok := range toks {
-		if err := ctx.Err(); err != nil {
-			return filtered, err
-		}
-		for _, cand := range eng.Expand(tok) {
-			if pol.Active() && !pol.Allow(cand) {
-				filtered++
-				continue
-			}
-			accepted, err := w.Add(cand)
-			if err != nil {
-				return filtered, err
-			}
-			if !accepted { // budget reached
-				return filtered, nil
-			}
-		}
-		if w.BudgetReached() {
-			break
-		}
-	}
-	return filtered, nil
-}
-
-func expandConcurrent(toks []string, eng *mutate.Engine, pol *policy.Filter, w *output.Writer, workers int) (int, error) {
-	type batch struct {
-		cands    []string
-		filtered int
-	}
-	jobs := make(chan string)
-	results := make(chan batch, workers)
-	done := make(chan struct{})
-	var doneOnce sync.Once
-	stop := func() { doneOnce.Do(func() { close(done) }) }
-
-	// Feeder: hand tokens to workers, stopping early if the consumer signals.
-	go func() {
-		defer close(jobs)
-		for _, t := range toks {
-			select {
-			case jobs <- t:
-			case <-done:
-				return
-			}
-		}
-	}()
-
-	// Workers: pure mutation + policy work, no shared mutable state.
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for t := range jobs {
-				expanded := eng.Expand(t)
-				b := batch{cands: expanded[:0]}
-				for _, c := range expanded {
-					if pol.Active() && !pol.Allow(c) {
-						b.filtered++
-						continue
-					}
-					b.cands = append(b.cands, c)
-				}
-				select {
-				case results <- b:
-				case <-done:
-					return
-				}
-			}
-		}()
-	}
-	go func() { wg.Wait(); close(results) }()
-
-	// Consumer: the only goroutine touching the writer, so it stays single-
-	// threaded. Keep draining results after a stop so workers never block.
-	var filtered int
-	var writeErr error
-	for b := range results {
-		filtered += b.filtered
-		if writeErr != nil || w.BudgetReached() {
-			continue // drain remaining batches
-		}
-		for _, c := range b.cands {
-			accepted, err := w.Add(c)
-			if err != nil {
-				writeErr = err
-				stop()
-				break
-			}
-			if !accepted { // budget reached
-				stop()
-				break
-			}
-		}
-		if w.BudgetReached() {
-			stop()
-		}
-	}
-	return filtered, writeErr
 }
 
 // policyNote reports how many candidates the policy filter rejected, when active.
@@ -361,9 +257,10 @@ func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr err
 	// Base wordlist: the combined tokens, buffered + deduped, budget-capped.
 	base := tokens.Extract(cfg.Profile)
 	combined := combine.Generate(base, combine.Config{
-		MaxCombine: cfg.Rules.MaxCombine,
-		Separators: cfg.Rules.Separators,
-		Limit:      cfg.Output.Budget,
+		MaxCombine:  cfg.Rules.MaxCombine,
+		Separators:  cfg.Rules.Separators,
+		Limit:       cfg.Rules.CombineLimit,
+		MaxAttempts: cfg.Rules.CombineAttempts, MaxBytes: cfg.Rules.MaxCandidateBytes,
 	})
 	wf, err := os.OpenFile(wordPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {

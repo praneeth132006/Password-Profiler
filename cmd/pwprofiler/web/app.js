@@ -49,6 +49,9 @@ form.addEventListener("submit", async (event) => {
       " unique candidates ready. Download your wordlist below." +
       (response.headers.get("X-Limit-Reached") === "true"
         ? " Candidate limit reached; increase it to explore more results."
+        : "") +
+      (response.headers.get("X-Search-Limited") === "true"
+        ? " Search limits were reached; this is a partial wordlist. See the algorithm guide for advanced configuration."
         : "");
     download.hidden = false;
   } catch (error) {

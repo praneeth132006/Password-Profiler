@@ -7,6 +7,29 @@ reaches 1.0.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-23
+
+### Changed
+- Stream combinations and breadth-first mutations; stop immediately when output is sufficient.
+- Enumerate full-leet substitutions lazily with cancellation inside traversal.
+- Replace quadratic combination preallocation with exact-length path traversal.
+- Stream bounded worker batches and propagate cancellation upstream.
+
+### Added
+- Separate configurable search limits for combinations, attempts, states and intermediate bytes.
+- CLI/browser notices when search limits reduce coverage.
+- Reference equivalence tests, fuzzing, concurrency regression tests and reproducible benchmarks.
+- Algorithm research and evaluation guide with measured performance and explicit limitations.
+
+### Fixed
+- Small output budgets no longer prevent examination of later policy-matching inputs.
+- Ctrl+C now cancels wordlist search and removes its partial output file.
+
+### Compatibility
+- Depth and combination width now support 1–8; worker count supports 1–64.
+- Large searches may stop at the new default work limits; use documented YAML settings to adjust them.
+
+
 ## [0.3.0] - 2026-09-22
 
 ### Added
