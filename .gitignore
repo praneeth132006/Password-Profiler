@@ -16,3 +16,8 @@ out.txt
 /passwords.txt
 /report.json
 *.session.json
+
+# Stray generated wordlists
+best.txt
+passwords.txt
+*.words
