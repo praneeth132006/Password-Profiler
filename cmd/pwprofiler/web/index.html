@@ -3,289 +3,238 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
     <title>Password Profiler · Local workspace</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header>
-      <div class="brand"><span class="logo">P_</span> PASSWORD PROFILER</div>
-      <small>● Local workspace</small>
+    <header class="site-header">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="10" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </span>
+        <span class="brand-name">Password&nbsp;Profiler</span>
+      </div>
+      <span class="status-pill"><span class="dot" aria-hidden="true"></span> Local workspace · offline</span>
     </header>
+
     <main>
-      <div class="eyebrow">PASSWORD AUDIT TOOLKIT / 01</div>
-      <h1>Build a more focused wordlist.</h1>
-      <p>
-        Bring your source files. Define the password policy. Export only
-        matching candidates.
-      </p>
+      <section class="hero">
+        <div class="eyebrow">PASSWORD AUDIT TOOLKIT</div>
+        <h1>Build a more focused wordlist.</h1>
+        <p class="lede">
+          Bring your source material, define the target password policy, and
+          export only the candidates that could actually match — nothing leaves
+          your machine.
+        </p>
+        <ul class="pills" aria-label="What makes this different">
+          <li><strong>Policy-aware</strong> — only valid candidates</li>
+          <li><strong>Explosion control</strong> — hard budgets at every stage</li>
+          <li><strong>Local only</strong> — no network, no storage</li>
+        </ul>
+      </section>
+
       <form id="form">
         <div class="layout">
           <section class="panel">
-            <div class="step">01 / SOURCE MATERIAL</div>
+            <div class="step"><span class="step-num">01</span> Source material</div>
             <h2>Start with what you know</h2>
             <p>
-              Upload UTF-8 text files, one entry per line. You can include
-              multiple files in each category.
+              Upload UTF-8 text files, one entry per line. You can add multiple
+              files to each category.
             </p>
             <div class="uploads">
-              <label class="upload"
-                ><span>Business emails</span
-                ><small>Addresses and company domains</small
-                ><input
-                  type="file"
-                  name="emails"
-                  multiple
-                  accept=".txt,text/plain"
-                  aria-label="Business email files"
-              /></label>
-              <label class="upload"
-                ><span>Names</span><small>Names, nicknames and aliases</small
-                ><input
-                  type="file"
-                  name="names"
-                  multiple
-                  accept=".txt,text/plain"
-                  aria-label="Name files"
-              /></label>
-              <label class="upload"
-                ><span>Companies</span
-                ><small>Organizations and brand names</small
-                ><input
-                  type="file"
-                  name="companies"
-                  multiple
-                  accept=".txt,text/plain"
-                  aria-label="Company files"
-              /></label>
-              <label class="upload"
-                ><span>Other keywords</span
-                ><small>Additional words for this audit</small
-                ><input
-                  type="file"
-                  name="keywords"
-                  multiple
-                  accept=".txt,text/plain"
-                  aria-label="Keyword files"
-              /></label>
+              <label class="upload">
+                <span class="upload-title">Business emails</span>
+                <small>Addresses and company domains</small>
+                <input type="file" name="emails" multiple accept=".txt,text/plain" aria-label="Business email files" />
+                <span class="upload-count" data-empty="No file selected">No file selected</span>
+              </label>
+              <label class="upload">
+                <span class="upload-title">Names</span>
+                <small>Names, nicknames and aliases</small>
+                <input type="file" name="names" multiple accept=".txt,text/plain" aria-label="Name files" />
+                <span class="upload-count" data-empty="No file selected">No file selected</span>
+              </label>
+              <label class="upload">
+                <span class="upload-title">Companies</span>
+                <small>Organizations and brand names</small>
+                <input type="file" name="companies" multiple accept=".txt,text/plain" aria-label="Company files" />
+                <span class="upload-count" data-empty="No file selected">No file selected</span>
+              </label>
+              <label class="upload">
+                <span class="upload-title">Other keywords</span>
+                <small>Additional words for this audit</small>
+                <input type="file" name="keywords" multiple accept=".txt,text/plain" aria-label="Keyword files" />
+                <span class="upload-count" data-empty="No file selected">No file selected</span>
+              </label>
             </div>
-            <label class="field" for="words">Or add words directly</label
-            ><textarea
-              id="words"
-              name="words"
-              placeholder="Example: one entry per line&#10;Northstar&#10;Riverstone"
-            ></textarea>
-            <div class="note">
-              Up to 2,000 entries total · 1 MiB per file · 256 bytes per
-              entry.<br />Blank lines and lines beginning with # are ignored.
-            </div>
+            <label class="field" for="words">Or add words directly</label>
+            <textarea id="words" name="words" spellcheck="false" placeholder="One entry per line&#10;Northstar&#10;Riverstone"></textarea>
+            <p class="note">
+              Up to 2,000 entries total · 1&nbsp;MiB per file · 256 bytes per
+              entry. Blank lines and lines beginning with <code>#</code> are
+              ignored.
+            </p>
           </section>
+
           <aside class="panel">
-            <div class="step">02 / PASSWORD POLICY</div>
+            <div class="step"><span class="step-num">02</span> Password policy</div>
             <h2>Set the boundaries</h2>
-            <p>Every exported candidate must match these requirements.</p>
+            <p>Every exported candidate must satisfy these requirements.</p>
             <div class="row">
-              <label class="field"
-                >Min. length<input
-                  name="min"
-                  type="number"
-                  min="0"
-                  max="128"
-                  value="8"
-                  required /></label
-              ><label class="field"
-                >Max. length<input
-                  name="max"
-                  type="number"
-                  min="1"
-                  max="128"
-                  value="24"
-                  required
-              /></label>
+              <label class="field">
+                Min. length
+                <input name="min" type="number" min="0" max="128" value="8" required />
+              </label>
+              <label class="field">
+                Max. length
+                <input name="max" type="number" min="1" max="128" value="24" required />
+              </label>
             </div>
             <fieldset>
               <legend>Required characters</legend>
               <div class="checks">
-                <label
-                  ><input
-                    type="checkbox"
-                    name="require"
-                    value="upper"
-                    checked
-                  />
-                  Uppercase</label
-                ><label
-                  ><input
-                    type="checkbox"
-                    name="require"
-                    value="lower"
-                    checked
-                  />
-                  Lowercase</label
-                ><label
-                  ><input
-                    type="checkbox"
-                    name="require"
-                    value="digit"
-                    checked
-                  />
-                  Number</label
-                ><label
-                  ><input
-                    type="checkbox"
-                    name="require"
-                    value="special"
-                    checked
-                  />
-                  Special</label
-                >
+                <label class="chip"><input type="checkbox" name="require" value="upper" checked /><span>Uppercase</span></label>
+                <label class="chip"><input type="checkbox" name="require" value="lower" checked /><span>Lowercase</span></label>
+                <label class="chip"><input type="checkbox" name="require" value="digit" checked /><span>Number</span></label>
+                <label class="chip"><input type="checkbox" name="require" value="special" checked /><span>Special</span></label>
               </div>
             </fieldset>
-            <label class="field"
-              >Candidate limit<input
-                name="budget"
-                type="number"
-                min="1"
-                max="100000"
-                value="100000"
-                required
-            /></label>
-            <div class="note">
+            <label class="field">
+              Candidate limit
+              <input name="budget" type="number" min="1" max="100000" value="100000" required />
+            </label>
+            <p class="note">
               Unique candidates, capped at your limit. Case variations,
               leetspeak and common suffixes are included.
-            </div>
+            </p>
+
             <details class="advanced" open>
               <summary>Generation coverage</summary>
-              <label class="field"
-                >Maximum joined tokens<input
-                  name="max_combine"
-                  type="number"
-                  min="1"
-                  max="8"
-                  value="2"
-                  required
-              /></label>
-              <label class="field"
-                >Mutation depth<input
-                  name="depth"
-                  type="number"
-                  min="1"
-                  max="8"
-                  value="2"
-                  required
-              /></label>
-              <label class="field"
-                >Leetspeak<select name="leet">
-                  <option value="off">Off</option>
-                  <option value="partial" selected>Partial</option>
-                  <option value="full">Full</option>
-                </select></label
-              >
-              <label class="field"
-                >Leet substitution positions<input
-                  name="leet_cap"
-                  type="number"
-                  min="-1"
-                  value="0"
-                  required
-              /></label>
-              <div class="note">
-                0 uses 3 positions; -1 includes every position in full mode.
-              </div>
-              <label
-                ><input name="repeat_tokens" type="checkbox" /> Allow repeated
-                tokens in combinations</label
-              >
-              <div class="note">
-                Combines words using no separator, dot, underscore, and hyphen.
-                Browser downloads are limited to 100,000 candidates and 60
-                seconds. Export an exhaustive configuration to complete the
-                defined search in the CLI.
-              </div>
-              <button class="secondary" type="submit" id="export-config">
-                Export exhaustive CLI configuration
-              </button>
-              <div class="note">
-                <code>pwprofiler generate -c audit.yaml -o passwords.txt</code
-                ><br />Exhaustive runs remove count, work and intermediate byte
-                caps and use exact deduplication. Time, RAM and disk
-                requirements can be very large. Depth, selected transforms and
-                policy still define the finite search.
+              <div class="advanced-body">
+                <div class="row">
+                  <label class="field">
+                    Max. joined tokens
+                    <input name="max_combine" type="number" min="1" max="8" value="2" required />
+                  </label>
+                  <label class="field">
+                    Mutation depth
+                    <input name="depth" type="number" min="1" max="8" value="2" required />
+                  </label>
+                </div>
+                <label class="field">
+                  Leetspeak
+                  <select name="leet">
+                    <option value="off">Off</option>
+                    <option value="partial" selected>Partial</option>
+                    <option value="full">Full</option>
+                  </select>
+                </label>
+                <label class="field">
+                  Leet substitution positions
+                  <input name="leet_cap" type="number" min="-1" value="0" required />
+                </label>
+                <p class="note">
+                  0 uses 3 positions; -1 includes every position in full mode.
+                </p>
+                <label class="chip chip-wide">
+                  <input name="repeat_tokens" type="checkbox" />
+                  <span>Allow repeated tokens in combinations</span>
+                </label>
+                <p class="note">
+                  Combines words using no separator, dot, underscore, and
+                  hyphen. Browser downloads are limited to 100,000 candidates and
+                  60 seconds — export an exhaustive configuration to complete the
+                  full defined search in the CLI.
+                </p>
+                <button class="secondary" type="submit" id="export-config">
+                  Export exhaustive CLI configuration
+                </button>
+                <p class="note">
+                  <code>pwprofiler generate -c audit.yaml -o passwords.txt</code>
+                  Exhaustive runs remove count, work and intermediate byte caps
+                  and use exact deduplication. Time, RAM and disk requirements
+                  can be very large.
+                </p>
               </div>
             </details>
+
             <details class="advanced">
               <summary>Advanced policy</summary>
-              <div class="row">
-                <label class="field"
-                  >Maximum UTF-8 bytes<input
-                    type="number"
-                    name="max_bytes"
-                    min="0"
-                    value="0"
-                /></label>
-                <label class="field"
-                  >Maximum repeated characters<input
-                    type="number"
-                    name="max_repeat"
-                    min="0"
-                    value="0"
-                /></label>
-              </div>
-              <div class="note">
-                0 disables either limit. Repeats count consecutive identical
-                characters.
-              </div>
-              <label class="field"
-                >Forbidden characters<input
-                  type="text"
-                  name="forbidden"
-                  placeholder="e.g. &lt;&gt;"
-              /></label>
-              <label class="field"
-                >Blocked passwords<textarea
-                  name="blocklist"
-                  placeholder="One exact password per line"
-                ></textarea>
-              </label>
-              <div class="note">
-                Blocklist matches are case-sensitive and compare the whole
-                password. Policy compliance does not measure password strength.
+              <div class="advanced-body">
+                <div class="row">
+                  <label class="field">
+                    Max. UTF-8 bytes
+                    <input type="number" name="max_bytes" min="0" value="0" />
+                  </label>
+                  <label class="field">
+                    Max. repeated chars
+                    <input type="number" name="max_repeat" min="0" value="0" />
+                  </label>
+                </div>
+                <p class="note">
+                  0 disables either limit. Repeats count consecutive identical
+                  characters.
+                </p>
+                <label class="field">
+                  Forbidden characters
+                  <input type="text" name="forbidden" spellcheck="false" placeholder="e.g. &lt;&gt;" />
+                </label>
+                <label class="field">
+                  Blocked passwords
+                  <textarea name="blocklist" spellcheck="false" placeholder="One exact password per line"></textarea>
+                </label>
+                <p class="note">
+                  Blocklist matches are case-sensitive and compare the whole
+                  password. Policy compliance does not measure password strength.
+                </p>
               </div>
             </details>
-            <button class="primary" id="generate" type="submit">
-              Generate wordlist →
-            </button>
-            <button id="cancel" class="secondary" type="button" hidden>
-              Cancel generation
-            </button>
-            <div class="note">
-              Inputs are processed locally and are not saved by the server.
+
+            <div class="actions">
+              <button class="primary" id="generate" type="submit">
+                Generate wordlist <span aria-hidden="true">→</span>
+              </button>
+              <button id="cancel" class="secondary" type="button" hidden>
+                Cancel generation
+              </button>
             </div>
+            <p class="note">
+              Inputs are processed locally and are not saved by the server.
+            </p>
             <div class="terminal">
-              Prefer the terminal?<br /><code>pwprofiler console</code
-              ><br />Same engine. Your workflow.
+              <span class="terminal-label">Prefer the terminal?</span>
+              <code>pwprofiler console</code>
+              <span>Same engine. Your workflow.</span>
             </div>
           </aside>
         </div>
       </form>
-      <section
-        id="result"
-        class="result"
-        aria-live="polite"
-        aria-atomic="true"
-        hidden
-      >
-        <p id="status"></p>
+
+      <section id="result" class="result" aria-live="polite" aria-atomic="true" hidden>
+        <div class="result-head">
+          <span class="spinner" aria-hidden="true"></span>
+          <p id="status"></p>
+        </div>
         <div id="download" hidden>
-          <a id="link" download="passwords.txt">Download passwords.txt ↓</a>
+          <div class="download-row">
+            <a id="link" class="download-link" download="passwords.txt">Download passwords.txt <span aria-hidden="true">↓</span></a>
+            <button id="copy" class="ghost" type="button">Copy preview</button>
+          </div>
           <details>
             <summary id="preview-label">Preview first 20 candidates</summary>
             <pre id="preview"></pre>
           </details>
         </div>
       </section>
+
       <footer>
-        <span>For authorized password auditing.</span
-        ><span>Local processing · No external assets · Plain text export</span>
+        <span>For authorized password auditing only.</span>
+        <span>Local processing · No external assets · Plain-text export</span>
       </footer>
     </main>
     <script src="/app.js" defer></script>

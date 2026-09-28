@@ -15,6 +15,17 @@ reaches 1.0.
 
 ## [Unreleased]
 
+### Changed
+- Redesigned the local web workspace (`pwprofiler serve`): refined dark theme
+  with a light-mode variant, gradient hero and logo, numbered step badges,
+  chip-style required-character toggles, sticky policy panel, a loading spinner
+  and richer result card. All within the existing strict CSP (system fonts, no
+  inline or external assets).
+
+### Added
+- Web UI shows per-category file-selection counts and a "Copy preview" button;
+  the result card reports candidate count and limit/partial-search notices.
+
 ## [0.4.0] - 2026-09-23
 
 ### Changed
