@@ -54,9 +54,10 @@ func newRootCmd() *cobra.Command {
 
 // genOpts carries CLI-only knobs (not part of the config schema) for scale.
 type genOpts struct {
-	workers int // mutation worker goroutines (>1 trades output ordering for speed)
-	report  *generationReport
-	dedup   string // auto | exact | bloom
+	workers    int // mutation worker goroutines (>1 trades output ordering for speed)
+	report     *generationReport
+	dedup      string // auto | exact | bloom
+	ruleFormat string // hashcat | john (rules mode only)
 }
 
 func newGenerateCmd() *cobra.Command {
@@ -93,6 +94,11 @@ func newGenerateCmd() *cobra.Command {
 			default:
 				return fmt.Errorf("--dedup %q: must be auto|exact|bloom", opts.dedup)
 			}
+			switch opts.ruleFormat {
+			case "", "hashcat", "john":
+			default:
+				return fmt.Errorf("--rule-format %q: must be hashcat|john", opts.ruleFormat)
+			}
 			return runGenerate(cmd, cfg, opts)
 		},
 	}
@@ -102,6 +108,7 @@ func newGenerateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&modeFlag, "mode", "", "override output mode: wordlist|rules")
 	cmd.Flags().IntVar(&opts.workers, "workers", 1, "mutation worker goroutines (>1 speeds up large runs but does not preserve output order)")
 	cmd.Flags().StringVar(&opts.dedup, "dedup", "auto", "dedup strategy: auto|exact|bloom (auto uses bloom for large budgets)")
+	cmd.Flags().StringVar(&opts.ruleFormat, "rule-format", "hashcat", "rules-mode output format: hashcat|john")
 	_ = cmd.MarkFlagRequired("config")
 	return cmd
 }
@@ -331,20 +338,37 @@ func runRules(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr err
 			_ = os.Remove(rulePath)
 		}
 	}()
-	if _, err := ruleSet.WriteTo(rf); err != nil {
+	john := opts.ruleFormat == "john"
+	if john {
+		if _, err := ruleSet.WriteJohn(rf, "pwprofiler"); err != nil {
+			return err
+		}
+	} else if _, err := ruleSet.WriteTo(rf); err != nil {
 		return err
 	}
 
-	// Report artifacts, estimated keyspace, and the hashcat invocation.
+	// Report artifacts, estimated keyspace, and the cracker invocation.
 	keyspace := int64(wstats.Emitted) * int64(ruleSet.Len())
 	out := cmd.ErrOrStderr()
-	fmt.Fprintf(out, "pwprofiler (rules mode):\n")
+	fmt.Fprintf(out, "pwprofiler (rules mode, %s):\n", ruleFormatName(opts.ruleFormat))
 	fmt.Fprintf(out, "  wordlist: %s  (%d words)%s\n", wordPath, wstats.Emitted,
 		budgetNote(wstats.BudgetHit, cfg.Output.Budget))
 	fmt.Fprintf(out, "  rules:    %s  (%d rules)\n", rulePath, ruleSet.Len())
 	fmt.Fprintf(out, "  estimated keyspace: ~%d candidates (words × rules)\n", keyspace)
-	fmt.Fprintf(out, "  run: hashcat -a 0 -m <hash-type> <hashes> %s -r %s\n", wordPath, rulePath)
+	if john {
+		fmt.Fprintf(out, "  append %s to your john.conf, then run:\n", rulePath)
+		fmt.Fprintf(out, "  run: john --wordlist=%s --rules=pwprofiler <hashes>\n", wordPath)
+	} else {
+		fmt.Fprintf(out, "  run: hashcat -a 0 -m <hash-type> <hashes> %s -r %s\n", wordPath, rulePath)
+	}
 	return nil
+}
+
+func ruleFormatName(f string) string {
+	if f == "john" {
+		return "John the Ripper"
+	}
+	return "hashcat"
 }
 
 // deriveRulePath turns a wordlist path into a sibling .rule path.

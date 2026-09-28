@@ -452,6 +452,11 @@ The `.rule` file uses standard hashcat functions (`:`, `l`, `u`, `c`, `sa@`,
 `$1$2$3`, `^0^9^9^1`, `r`, `d`, `]`), each validated by the built-in interpreter
 in [`internal/rules`](internal/rules/apply.go).
 
+**John the Ripper format:** add `--rule-format john` to emit the same rules as a
+`[List.Rules:pwprofiler]` section. Append it to your `john.conf` and run
+`john --wordlist=base.words --rules=pwprofiler <hashes>`. The functions used are
+in the syntax common to both crackers.
+
 ## Project layout
 
 ```

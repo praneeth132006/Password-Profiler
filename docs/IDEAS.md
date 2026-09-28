@@ -39,8 +39,8 @@ with `rank`.
 
 ## Tier 2 — strong additions
 
-### 4. Richer rule export  ·  impact: med · effort: M
-- Emit **John the Ripper** rules alongside hashcat.
+### 4. Richer rule export  ·  impact: med · effort: M · **partly done (John export)**
+- Emit **John the Ripper** rules alongside hashcat. **(done: `--rule-format john`)**
 - Import and optimize existing `.rule` files (dedupe, reorder by expected yield).
 - Optionally rank rule lines the same way `rank` orders candidates.
 

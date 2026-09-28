@@ -79,6 +79,36 @@ func (s *Set) WriteTo(w io.Writer) (int64, error) {
 	return n, nil
 }
 
+// WriteJohn writes the same rules as a John the Ripper rule section
+// (`[List.Rules:<section>]`), which the user appends to john.conf and runs with
+// `john --rules=<section>`. The functions pwprofiler emits (`:` `l` `u` `c` `t`
+// `T0` `r` `d` `]` `sXY` `$X` `^X`) are in the syntax common to hashcat and John,
+// so the same lines are valid in both.
+func (s *Set) WriteJohn(w io.Writer, section string) (int64, error) {
+	if section == "" {
+		section = "pwprofiler"
+	}
+	bw := bufio.NewWriter(w)
+	var n int64
+	header := fmt.Sprintf("[List.Rules:%s]\n", section)
+	m, err := bw.WriteString(header)
+	n += int64(m)
+	if err != nil {
+		return n, fmt.Errorf("write john header: %w", err)
+	}
+	for _, line := range s.lines {
+		m, err := bw.WriteString(line + "\n")
+		n += int64(m)
+		if err != nil {
+			return n, fmt.Errorf("write rule: %w", err)
+		}
+	}
+	if err := bw.Flush(); err != nil {
+		return n, fmt.Errorf("flush john rules: %w", err)
+	}
+	return n, nil
+}
+
 // Generate builds the rule set from cfg. Order: no-op, cases, leet, appends,
 // prepends, structural — deterministic and de-duplicated.
 func Generate(cfg Config) *Set {

@@ -149,3 +149,27 @@ func hasLine(lines []string, want string) bool {
 	}
 	return false
 }
+
+func TestWriteJohnSection(t *testing.T) {
+	set := Generate(Config{Cases: []string{"lower", "capitalize"}, Append: []string{"1"}})
+	var buf bytes.Buffer
+	if _, err := set.WriteJohn(&buf, "audit"); err != nil {
+		t.Fatalf("WriteJohn: %v", err)
+	}
+	out := buf.String()
+	if !strings.HasPrefix(out, "[List.Rules:audit]\n") {
+		t.Errorf("missing John section header: %q", out)
+	}
+	// Every hashcat line must also appear in the John output (shared syntax).
+	for _, line := range set.Lines() {
+		if !strings.Contains(out, "\n"+line+"\n") {
+			t.Errorf("John output missing rule %q", line)
+		}
+	}
+	// Default section name when empty.
+	var buf2 bytes.Buffer
+	_, _ = set.WriteJohn(&buf2, "")
+	if !strings.HasPrefix(buf2.String(), "[List.Rules:pwprofiler]\n") {
+		t.Errorf("empty section should default to pwprofiler")
+	}
+}

@@ -16,6 +16,9 @@ reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- **John the Ripper rule export**: `generate --mode rules --rule-format john`
+  writes the mutation set as a `[List.Rules:pwprofiler]` section for
+  `john --rules=pwprofiler`, alongside the existing hashcat `.rule` output.
 - **Effort estimation** (`pwprofiler estimate`): count a config's unique
   policy-passing candidates and report the expected time to try them at a given
   cracking rate (`--hashrate`), bounded by `--max`.
