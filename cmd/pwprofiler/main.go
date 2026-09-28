@@ -48,7 +48,7 @@ func newRootCmd() *cobra.Command {
 		Version:       version,
 	}
 	root.RunE = runConsole
-	root.AddCommand(newGenerateCmd(), newConsoleCmd(), newFilesCmd(), newServeCmd(), newCheckCmd(), newValidateCmd(), newRankCmd())
+	root.AddCommand(newGenerateCmd(), newConsoleCmd(), newFilesCmd(), newServeCmd(), newCheckCmd(), newValidateCmd(), newRankCmd(), newEstimateCmd())
 	return root
 }
 

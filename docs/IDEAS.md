@@ -5,9 +5,16 @@ password-audit tool. Everything here must keep the tool defensive and
 authorized-use-only (see [SECURITY.md](../SECURITY.md)). Effort is a rough
 t-shirt size; impact is on real audit effectiveness.
 
+> **Status:** Tier 1 landed — a frequency-informed ranking model with a
+> `--model` corpus, `--exclude` known-tried lists, and the `estimate` effort
+> report all ship today. The remaining Tier-1 work is the trained Markov model
+> (item 1). Tier 2–3 are open.
+
 ## Tier 1 — highest impact
 
-### 1. A trained likelihood model for ranking  ·  impact: high · effort: M
+### 1. A trained likelihood model for ranking  ·  impact: high · effort: M · **partly done**
+Shipped: a built-in frequency table for common suffixes and an optional
+`--model` frequency corpus that boosts target-specific core words. Still open:
 The current `internal/rank` scorer is a transparent hand-tuned heuristic. Add an
 optional **statistical model** so ordering reflects real frequencies:
 - A frequency-weighted table of suffixes, years, and structural patterns derived
@@ -18,14 +25,14 @@ optional **statistical model** so ordering reflects real frequencies:
   frequency corpus (e.g. from a target's sector) without recompiling.
 Keep the heuristic as the zero-config default; the model is opt-in.
 
-### 2. Coverage & effort report  ·  impact: high · effort: M
+### 2. Coverage & effort report  ·  impact: high · effort: M · **done (`estimate`)**
 `pwprofiler estimate -c profile.yaml [--hashrate 1e9]` → keyspace size, unique
 candidates after policy, and expected wall-clock to exhaust at a given hashrate.
 Answers the auditor's real question: *"is this list worth running?"* Extend
 `check` to compare a generated list against an already-cracked potfile and report
 net-new coverage.
 
-### 3. Exclude-known & potfile awareness  ·  impact: high · effort: S
+### 3. Exclude-known & potfile awareness  ·  impact: high · effort: S · **done (`rank --exclude`)**
 `--exclude cracked.txt` / `--exclude already-tried.txt` to skip candidates you've
 already run, so repeated audits only spend time on new guesses. Pairs naturally
 with `rank`.

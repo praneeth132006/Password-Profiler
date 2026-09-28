@@ -16,6 +16,14 @@ reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- **Effort estimation** (`pwprofiler estimate`): count a config's unique
+  policy-passing candidates and report the expected time to try them at a given
+  cracking rate (`--hashrate`), bounded by `--max`.
+- **Frequency-informed ranking**: a built-in common-suffix table plus an optional
+  `rank --model <corpus>` that boosts target-specific words from a
+  frequency-ordered list.
+- **Exclude-known**: `rank --exclude <list>` (repeatable) drops already-tried or
+  cracked candidates before ranking, so repeat audits focus on net-new guesses.
 - **Candidate ranking** (`internal/rank` + `pwprofiler rank`): reorder any
   wordlist so the most likely passwords come first, based on a transparent
   likelihood-scoring model. `--top N` keeps only the N best using memory

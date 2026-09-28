@@ -30,13 +30,35 @@ func (h *minHeap) Pop() any {
 	return it
 }
 
-// Stream reads newline-delimited candidates from r and writes them to w ordered
-// best-first (highest Score first). When top > 0 it retains only the top-K using
-// an O(K)-memory min-heap, so it ranks arbitrarily long inputs without buffering
-// them all. When top <= 0 it ranks every line (buffering the whole input).
-// It returns the number of lines written. Blank lines are skipped; duplicates
-// are preserved (de-duplication is the generator's job, not the ranker's).
+// Options tunes a ranking pass.
+type Options struct {
+	// Top keeps only the N highest-scoring candidates (0 = rank everything).
+	Top int
+	// Model, when non-nil, adds a frequency bonus on top of the heuristic Score.
+	Model *Model
+	// Exclude drops any candidate present in this set before ranking (e.g. a
+	// list of already-tried passwords), so repeat audits only rank net-new ones.
+	Exclude map[string]struct{}
+}
+
+// Stream ranks candidates from r to w best-first using the default heuristic.
+// See StreamWith for model/exclusion options. Blank lines are skipped and
+// duplicates are preserved (de-duplication is the generator's job).
 func Stream(r io.Reader, w io.Writer, top int) (int, error) {
+	return StreamWith(r, w, Options{Top: top})
+}
+
+// StreamWith ranks candidates from r and writes them to w ordered best-first.
+// When Top > 0 it retains only the top-K using an O(K)-memory min-heap, so it
+// ranks arbitrarily long inputs without buffering them all; when Top <= 0 it
+// buffers and ranks every line. Returns the number of lines written.
+func StreamWith(r io.Reader, w io.Writer, opts Options) (int, error) {
+	top := opts.Top
+	scoreOf := Score
+	if opts.Model != nil {
+		scoreOf = opts.Model.Score
+	}
+
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 
@@ -53,7 +75,12 @@ func Stream(r io.Reader, w io.Writer, top int) (int, error) {
 		if line == "" {
 			continue
 		}
-		item := scored{line: line, score: Score(line), idx: idx}
+		if opts.Exclude != nil {
+			if _, skip := opts.Exclude[line]; skip {
+				continue
+			}
+		}
+		item := scored{line: line, score: scoreOf(line), idx: idx}
 		idx++
 		if top <= 0 {
 			all = append(all, item)

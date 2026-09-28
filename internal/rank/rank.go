@@ -111,6 +111,9 @@ func Score(pw string) int {
 		score -= 20
 	}
 
+	// Small, frequency-informed nudge for common trailing tails ("1", "123!").
+	score += suffixBonus(pw)
+
 	return score
 }
 

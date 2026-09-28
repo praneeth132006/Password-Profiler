@@ -60,7 +60,7 @@ shipped in [`testdata/sample.yaml`](testdata/sample.yaml) is fictional.
 
 - [Install](#install) · [Local UI & console](#local-ui-and-interactive-console)
 - [Quick start](#quick-start) · [Usage](#usage) · [Config](#config)
-- [Ranking for accuracy](#ranking-for-accuracy)
+- [Ranking for accuracy](#ranking-for-accuracy) · [Estimate effort](#estimate-effort-before-a-run)
 - [Large & exhaustive wordlists](#large-and-exhaustive-wordlists)
 - [Policies, sessions & verification](#reusable-policies-sessions-and-verification)
 - [Cracking pipe examples](#cracking-pipe-examples)
@@ -263,6 +263,20 @@ proportional to **N**, not to the input length — so it ranks arbitrarily long
 lists (even ones that don't fit in RAM) in a single streaming pass. Without
 `--top`, the whole list is ranked.
 
+Two more flags sharpen ranking for a specific engagement:
+
+```bash
+# Boost target-specific words with a frequency-ordered corpus you're allowed
+# to use (most-frequent term first), and skip anything already tried/cracked:
+pwprofiler rank -i candidates.txt --model sector-words.txt \
+  --exclude already-tried.txt --exclude cracked.txt -o ranked.txt
+```
+
+- `--model` reads a frequency-ordered word list and lifts candidates whose core
+  word appears in it, on top of the built-in heuristic.
+- `--exclude` (repeatable) drops candidates present in the given lists before
+  ranking, so a repeat audit spends effort only on net-new guesses.
+
 Scoring is a transparent, deterministic heuristic based on public studies of
 leaked-password composition (used defensively here): the common human shape is a
 capitalized word, then a short digit run (a year or `123`), then at most one
@@ -273,6 +287,29 @@ less often. Ranking is an **ordering signal, not a password-strength meter**, an
 it lives in the isolated [`internal/rank`](internal/rank/rank.go) package so it
 can be reused and tuned independently. See
 [algorithm notes](docs/ALGORITHM.md) for the exact scoring model.
+
+## Estimate effort before a run
+
+Before committing to a long crack, ask whether a list is worth it.
+`pwprofiler estimate` counts the unique candidates a config produces (after
+policy) and reports the expected time to try them at a given cracking rate:
+
+```bash
+pwprofiler estimate -c profile.yaml --hashrate 1e9     # ~1 GH/s (fast MD5)
+pwprofiler estimate -c profile.yaml --hashrate 12000   # ~slow bcrypt
+```
+
+```
+  base tokens:        25
+  combined=1810 (singles=25)
+  unique candidates:  308574
+  at 10.0 kH guesses/sec:
+    time to try all:  30.9 s
+    expected 1st hit: ~15.4 s (if the password is in the list)
+```
+
+Counting stops at `--max` (default 20,000,000); if the cap or a search limit is
+hit, the count and times are reported as a lower bound.
 
 ## Large and exhaustive wordlists
 
