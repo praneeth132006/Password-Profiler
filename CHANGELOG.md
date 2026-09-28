@@ -15,6 +15,14 @@ reaches 1.0.
 
 ## [Unreleased]
 
+### Added
+- **Candidate ranking** (`internal/rank` + `pwprofiler rank`): reorder any
+  wordlist so the most likely passwords come first, based on a transparent
+  likelihood-scoring model. `--top N` keeps only the N best using memory
+  proportional to N (a min-heap), so it ranks arbitrarily long lists in one pass.
+- Documentation: `docs/IDEAS.md` (scoped roadmap of enhancements), a ranking
+  section in `docs/ALGORITHM.md`, and README Features/Contents/Ranking sections.
+
 ### Changed
 - Redesigned the local web workspace (`pwprofiler serve`): refined dark theme
   with a light-mode variant, gradient hero and logo, numbered step badges,

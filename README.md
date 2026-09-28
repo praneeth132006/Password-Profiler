@@ -34,6 +34,41 @@ shipped in [`testdata/sample.yaml`](testdata/sample.yaml) is fictional.
 
 ---
 
+## Features
+
+- **Targeted generation** from names, dates, companies, domains and keywords —
+  token extraction, bounded cross-token combination, and a composable mutation
+  engine (case, leetspeak, affix years/suffixes, structural).
+- **Likelihood ranking** — reorder any wordlist so the most probable passwords
+  come first, with `--top N` selection in memory proportional to `N`, not the
+  list length. See [Ranking for accuracy](#ranking-for-accuracy).
+- **Policy-aware** — emit only candidates a target policy could accept
+  (length, character classes, byte limits, repeat limits, blocklists,
+  forbidden characters).
+- **Rule mode** — a small base wordlist plus a validated hashcat `.rule` file
+  instead of a giant materialized list.
+- **Explosion control** — hard budgets and per-stage caps; streaming generation
+  that stops as soon as the budget is met, with explicit partial-coverage
+  notices. Optional exhaustive mode for a complete finite search.
+- **Four ways to drive it** — YAML config, scriptable file flags, an
+  interactive console, and a local browser UI (no Node, no external assets).
+- **Scales** — bounded-memory Bloom de-duplication and a mutation worker pool.
+- **Single static binary**, `cmd/`+`internal/` layout, table-driven tests, CI,
+  and Debian packaging.
+
+## Contents
+
+- [Install](#install) · [Local UI & console](#local-ui-and-interactive-console)
+- [Quick start](#quick-start) · [Usage](#usage) · [Config](#config)
+- [Ranking for accuracy](#ranking-for-accuracy)
+- [Large & exhaustive wordlists](#large-and-exhaustive-wordlists)
+- [Policies, sessions & verification](#reusable-policies-sessions-and-verification)
+- [Cracking pipe examples](#cracking-pipe-examples)
+- [Project layout](#project-layout) · [Development](#development) · [Roadmap](#roadmap)
+- [Ideas & where this is going](docs/IDEAS.md)
+
+---
+
 ## Install
 
 **Build from source** (requires Go 1.23+):
@@ -208,6 +243,37 @@ default) switches to a Bloom filter once the budget is large. Bloom filters can
 omit unique candidates through false positives; use exact or exhaustive mode
 when complete coverage of the configured search is required.
 
+## Ranking for accuracy
+
+A wordlist is only as good as its *order*: a cracker that tries the most
+probable candidates first succeeds far sooner. `pwprofiler rank` reorders any
+newline-delimited wordlist — this tool's output or one you already have — so the
+most realistic passwords come first.
+
+```bash
+# Rank an existing list, best-first
+pwprofiler rank -i candidates.txt -o ranked.txt
+
+# Generate, then keep only the 100k most likely candidates (pipeline)
+pwprofiler generate -c profile.yaml | pwprofiler rank --top 100000 > best.txt
+```
+
+With `--top N`, only the N best candidates are retained using memory
+proportional to **N**, not to the input length — so it ranks arbitrarily long
+lists (even ones that don't fit in RAM) in a single streaming pass. Without
+`--top`, the whole list is ranked.
+
+Scoring is a transparent, deterministic heuristic based on public studies of
+leaked-password composition (used defensively here): the common human shape is a
+capitalized word, then a short digit run (a year or `123`), then at most one
+trailing symbol — `Falcons2024!`. Candidates matching that shape rank highest;
+heavy leetspeak (`f@lc0n$`), all-caps, case toggling, interior symbols,
+duplicated words and very short strings rank lower because real users choose them
+less often. Ranking is an **ordering signal, not a password-strength meter**, and
+it lives in the isolated [`internal/rank`](internal/rank/rank.go) package so it
+can be reused and tuned independently. See
+[algorithm notes](docs/ALGORITHM.md) for the exact scoring model.
+
 ## Large and exhaustive wordlists
 
 File, console and browser defaults now combine up to **two tokens** with four
@@ -361,6 +427,7 @@ pwprofiler/
 │   ├── mutate/          # composable transform engine
 │   ├── policy/          # filter by length + required character classes
 │   ├── rules/           # hashcat .rule emitter + validating interpreter
+│   ├── rank/            # likelihood scoring + best-first ordering (top-K)
 │   ├── dedup/           # exact + Bloom-filter de-duplication
 │   └── output/          # buffered, deduped, budget-capped sink
 ├── testdata/            # sample config
@@ -388,7 +455,10 @@ Every `internal/` package ships table-driven tests. `go build ./...` and
 - [x] **Phase 4 — Rule mode:** hashcat `.rule` emitter.
 - [x] **Phase 5 — Policy filter.**
 - [x] **Phase 6 — Scale hardening:** scalable dedup, worker pool, keyspace stats.
+- [x] **Ranking:** likelihood scoring + best-first ordering (`pwprofiler rank`).
 - [ ] **Phase 7 — (Optional) crawler:** CeWL-style keyword harvesting (isolated).
+
+More ideas and direction: [docs/IDEAS.md](docs/IDEAS.md).
 
 ## Contributing
 

@@ -182,3 +182,44 @@ or inherit their reported success rates. A future ranking experiment should
 use permissioned training data, a disjoint held-out test set, and coverage at
 fixed candidate budgets, alongside runtime and memory measurements. No password
 corpus was downloaded or uploaded for this work.
+
+## Candidate ranking (accuracy)
+
+`internal/rank` orders a wordlist so the most likely passwords come first. This
+is separate from generation: it scores finished candidate strings, so it works
+on this tool's output or any existing list, and needs no provenance metadata.
+
+### Scoring model
+
+`rank.Score(pw)` returns a relative integer (higher = more likely). It is a
+transparent, deterministic heuristic — an ordering signal, **not** a
+strength meter. The string is split from the right into trailing symbols,
+trailing digits, and a leading "core", then scored on:
+
+- **Length** — 8–12 characters score highest; very short strings are penalized.
+- **Core shape** — a clean alphabetic core scores well; digits or symbols
+  *inside* the core (leetspeak, awkward composition) are penalized per character.
+- **Trailing digits** — 1–4 (a year or `123`) is the common human suffix and
+  scores highest; long digit runs score low.
+- **Trailing symbol** — exactly one (often `!`) is common; several are rare.
+- **Case pattern** — `Capitalized` and `all-lower` score above `ALL-UPPER`;
+  mixed/toggled case is penalized.
+- **Duplication** — a whole-string repeat (`johnjohn`) is a generator artifact
+  and is penalized.
+
+This favors the dominant real-world shape (`Falcons2024!`) over tool-flavored
+variants (`f@lc0n$`, `enotsreviR`, `AaAaAaAa`).
+
+### Selection and scale
+
+`rank.Stream` ranks in one pass. With `--top N` it keeps only the N
+highest-scoring candidates using an O(N) min-heap, so it ranks inputs far larger
+than memory; the retained set provably equals the first N of a full ranking
+(see `TestStreamTopKBoundedMatchesFullSort`). Without `--top` the whole list is
+buffered and sorted. Ties break by input order for deterministic output.
+
+### Limitations
+
+The heuristic is not trained on a labeled corpus and does not estimate a true
+guess number. See [IDEAS.md](IDEAS.md) for a planned statistical/Markov model
+using permissioned training data and held-out evaluation.

@@ -29,6 +29,32 @@ When reporting, please include:
 Please give maintainers a reasonable window to investigate and release a fix
 before any public disclosure.
 
+## In scope
+
+- Crashes, panics, or unbounded resource use triggered by untrusted **config,
+  policy, or input files**.
+- Path traversal, symlink, or overwrite issues in output handling.
+- Weaknesses in the local web server's isolation (Host/Origin checks, CSP,
+  same-origin enforcement) that allow another local origin or a remote page to
+  drive it.
+- Supply-chain issues (dependencies, build, or release artifacts).
+
+## Out of scope
+
+- The tool doing what it is designed to do (generating candidate passwords) —
+  that is the feature, used under the authorized-use terms above.
+- Findings that require the operator to supply already-hostile input to their
+  own local run, with no crossing of a trust boundary.
+
+## Hardening already in place
+
+- The core generation pipeline makes **no network calls**.
+- `pwprofiler serve` binds only to `127.0.0.1`, verifies `Host`/`Origin`, sets a
+  strict Content-Security-Policy, requires a same-origin header for generation,
+  processes one request at a time, and keeps uploads and results in memory.
+- File output uses `O_EXCL` (refuses to overwrite) with owner-only (`0600`)
+  permissions on Unix; failed/cancelled runs remove partial output.
+
 ## Supported versions
 
 This project is pre-1.0 and under active development. Fixes are applied to the

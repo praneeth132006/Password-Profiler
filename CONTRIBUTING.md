@@ -30,15 +30,29 @@ make run          # ./pwprofiler generate --config testdata/sample.yaml
 
 ## Project architecture
 
-The pipeline is one package per stage under `internal/`:
+The pipeline is one package per stage under `internal/`, orchestrated by the
+CLI in `cmd/pwprofiler`:
 
 ```
-Config → Profile → Tokens → Combinations → Mutations → (Policy) → Output
-         profile   tokens    combine        mutate/rules  policy    output
+Config → Profile → Tokens → Combinations → Mutations → (Policy) → Output → (Rank)
+         profile   tokens    combine        mutate/rules  policy    output    rank
 ```
+
+| Package            | Responsibility                                             |
+| ------------------ | ---------------------------------------------------------- |
+| `internal/profile` | Parse + validate YAML config                               |
+| `internal/tokens`  | Profile → base tokens (splitting, date decomposition)      |
+| `internal/combine` | Bounded cross-token combination                            |
+| `internal/mutate`  | Composable transforms (case, leet, affix, structural)      |
+| `internal/rules`   | hashcat `.rule` emitter + validating interpreter           |
+| `internal/policy`  | Filter candidates against a target policy                  |
+| `internal/dedup`   | Exact + Bloom-filter de-duplication                        |
+| `internal/output`  | Buffered, deduped, budget-capped sink                      |
+| `internal/rank`    | Likelihood scoring + best-first ordering (pure, reusable)  |
 
 Each stage has a small, testable interface so stages stay swappable. Please
-keep new logic inside the stage it belongs to rather than in `cmd/`.
+keep new logic inside the stage it belongs to rather than in `cmd/`. Pure
+library packages (`rank`, `policy`, `mutate`, …) must not import `cmd`.
 
 ## Standards (a change is not "done" until these pass)
 
@@ -61,6 +75,13 @@ CI runs all of the above on every pull request.
 2. Make your change with tests; keep commits focused.
 3. Use clear commit messages (e.g. `feat(mutate): ...`, `fix(output): ...`).
 4. Open a pull request describing the what and why, and how you tested it.
+
+## Where to help
+
+Open to ideas of all sizes. [`docs/IDEAS.md`](docs/IDEAS.md) lists concrete,
+scoped directions (ranking models, a keyword crawler, a strength/coverage
+report, richer rule export, and more) with rough effort estimates — a good place
+to find something to pick up.
 
 ## Reporting bugs and requesting features
 
