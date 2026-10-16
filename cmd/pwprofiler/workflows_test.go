@@ -141,7 +141,7 @@ func TestBrowserWorkflow(t *testing.T) {
 	t.Run("page", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, httptest.NewRequest("GET", "http://127.0.0.1:8080/", nil))
-		if w.Code != 200 || !strings.Contains(w.Body.String(), "Build a more focused wordlist") {
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "Build a wordlist that fits") {
 			t.Fatal(w.Code)
 		}
 	})

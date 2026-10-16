@@ -11,6 +11,19 @@ unauthorized access — for example, built-in targeting of third-party services,
 credential exfiltration, or evasion tooling. Features should serve legitimate
 password-audit and penetration-testing workflows.
 
+Two specific lines we hold:
+
+- **No real leaked credentials.** The tool generates candidate *guesses* and may
+  use *public, breach-derived composition data* (common-password corpora,
+  keyboard walks) to rank and seed. It must never ship, fetch, or emit real
+  individuals' leaked `email:password` records. The bundled common-password
+  corpus is public weak-password knowledge, not a credential dump.
+- **Hashing stays audit-scoped.** `internal/hashes` covers only fast, unsalted
+  algorithms used to match a captured hash against a candidate list
+  (md5/sha1/sha256/sha512/ntlm). Do not add salted/slow schemes as a
+  "precompute" feature — they can't be matched from a list, and such a request
+  is a red flag.
+
 ## Getting started
 
 Requirements: **Go 1.23+**.
@@ -34,21 +47,22 @@ The pipeline is one package per stage under `internal/`, orchestrated by the
 CLI in `cmd/pwprofiler`:
 
 ```
-Config → Profile → Tokens → Combinations → Mutations → (Policy) → Output → (Rank)
-         profile   tokens    combine        mutate/rules  policy    output    rank
+Config → Profile → Tokens → Combinations → Mutations → (Policy) → Output → (Rank) → (Hash)
+         profile   tokens    combine        mutate/rules  policy    output    rank     hashes
 ```
 
 | Package            | Responsibility                                             |
 | ------------------ | ---------------------------------------------------------- |
-| `internal/profile` | Parse + validate YAML config                               |
-| `internal/tokens`  | Profile → base tokens (splitting, date decomposition)      |
+| `internal/profile` | Parse + validate YAML config (person/company/other schema) |
+| `internal/tokens`  | Profile → base tokens (splitting, date decomposition, diacritic folding, keyboard-walk + common-password seeds) |
 | `internal/combine` | Bounded cross-token combination                            |
 | `internal/mutate`  | Composable transforms (case, leet, affix, structural)      |
-| `internal/rules`   | hashcat `.rule` emitter + validating interpreter           |
+| `internal/rules`   | hashcat / John `.rule` emitter + validating interpreter    |
 | `internal/policy`  | Filter candidates against a target policy                  |
 | `internal/dedup`   | Exact + Bloom-filter de-duplication                        |
-| `internal/output`  | Buffered, deduped, budget-capped sink                      |
+| `internal/output`  | Buffered, deduped, budget-capped sink (optional line formatter) |
 | `internal/rank`    | Likelihood scoring + best-first ordering (pure, reusable)  |
+| `internal/hashes`  | Fast unsalted digests for match-against-capture (incl. vendored MD4/NTLM) |
 
 Each stage has a small, testable interface so stages stay swappable. Please
 keep new logic inside the stage it belongs to rather than in `cmd/`. Pure

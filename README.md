@@ -36,34 +36,104 @@ shipped in [`testdata/sample.yaml`](testdata/sample.yaml) is fictional.
 
 ## Features
 
+- **Target-type aware** — tell it whether you are profiling a **person**, a
+  **company**, or **other**, and the input fields and default affixes adapt:
+  person (name, DOB, partner, children, pets), company (brand, products,
+  locations, departments, founders, founding year), or a generic keywords/files
+  mode. All populated fields still contribute tokens, so mixed profiles work.
 - **Targeted generation** from names, dates, companies, domains and keywords —
   token extraction, bounded cross-token combination, and a composable mutation
   engine (case, leetspeak, affix years/suffixes, structural). Token extraction
   folds diacritics to ASCII (`José → jose`, `Müller → muller`/`mueller`) and can
   seed common keyboard walks (`qwerty`, `1q2w3e`, `qazwsx`) via
   `rules.keyboard_walks` / `generate --keyboard-walks`.
+- **Breach-informed seeding** — optionally inject a bundled, curated
+  common-password corpus (the universally weak passwords that top every
+  breach-composition study) as base tokens with `rules.seed_common` /
+  `generate --seed-common N`, so a run always tries the obvious guesses. For
+  large external corpora (SecLists, rockyou, HIBP), feed them to `rank --model`
+  (ordering) and `rank --exclude` (skip-known) instead of exploding generation.
 - **Likelihood ranking** — reorder any wordlist so the most probable passwords
   come first, with `--top N` selection in memory proportional to `N`, not the
-  list length. See [Ranking for accuracy](#ranking-for-accuracy).
+  list length. The browser UI exposes **Top 100 / 1,000 / 10k / All** presets.
+  See [Ranking for accuracy](#ranking-for-accuracy).
+- **Hash output** — emit each candidate with its hash for matching against a
+  hash captured in an authorized engagement: `md5`, `sha1`, `sha256`, `sha512`
+  and **NTLM** (the Windows/AD NT hash), via `generate --emit-hashes` or the
+  standalone `hash` subcommand. Salted/slow schemes (bcrypt, argon2) are
+  deliberately excluded — they can't be matched from a precomputed list.
 - **Policy-aware** — emit only candidates a target policy could accept
   (length, character classes, byte limits, repeat limits, blocklists,
   forbidden characters).
-- **Rule mode** — a small base wordlist plus a validated hashcat `.rule` file
-  instead of a giant materialized list.
+- **Rule mode** — a small base wordlist plus a validated hashcat (or John)
+  `.rule` file instead of a giant materialized list.
+- **No duplicates** — exact de-duplication guarantees every emitted candidate is
+  unique; a bounded-memory Bloom filter is available for very large budgets.
 - **Explosion control** — hard budgets and per-stage caps; streaming generation
   that stops as soon as the budget is met, with explicit partial-coverage
   notices. Optional exhaustive mode for a complete finite search.
 - **Four ways to drive it** — YAML config, scriptable file flags, an
-  interactive console, and a local browser UI (no Node, no external assets).
+  interactive console, and a local, offline browser UI (no Node, no external
+  assets, strict CSP).
 - **Scales** — bounded-memory Bloom de-duplication and a mutation worker pool.
 - **Single static binary**, `cmd/`+`internal/` layout, table-driven tests, CI,
-  and Debian packaging.
+  and Debian packaging. **Zero runtime dependencies** — even MD4/NTLM is vendored
+  in-tree.
+
+## Why pwprofiler
+
+Most profilers (CUPP, pydictor, psudohash) are excellent at *expansion* — turn a
+handful of facts into a big list. pwprofiler is built around the parts that
+decide whether an audit is actually productive:
+
+1. **Relevance over volume.** Target-type modes, diacritic folding, breach-informed
+   seeding and likelihood ranking put the candidates that *could really be the
+   password* first. You can run the top 1,000 before you run the top million.
+2. **Honesty about cost.** `estimate` tells you the keyspace and the wall-clock to
+   exhaust it *before* you start; every run reports exactly what was capped and
+   where, so a "partial" list is never mistaken for a complete one.
+3. **It never blows up your disk by accident.** Hard budgets and per-stage caps
+   are on by default; the exhaustive, uncapped mode is explicit and opt-in.
+4. **Match-ready output.** Rule-mode (hashcat/John) and `--emit-hashes` plug
+   straight into the cracking step instead of stopping at a text file.
+5. **Trustworthy to run on an engagement laptop.** A single static binary, zero
+   runtime dependencies, an offline browser UI with a strict CSP, and output
+   that never leaves the machine.
+
+### Why Go instead of Python
+
+The reference tools in this space are Python. Go buys this project things that
+matter specifically for a password-audit workload:
+
+- **One static binary, nothing to install.** `go build` produces a single
+  executable with no interpreter, virtualenv, or `pip install` on the target
+  box — you drop it on a jump host and it runs. The comparable Python tools need
+  a working Python plus dependencies.
+- **Throughput.** Candidate generation is CPU-bound string work. Compiled,
+  statically-typed Go is typically far faster per core than CPython for this,
+  which matters when a run is tens of millions of candidates.
+- **Real parallelism.** Goroutines and channels drive a mutation worker pool
+  without fighting a global interpreter lock, so `--workers` scales across cores.
+- **Bounded, predictable memory.** Streaming generation plus a Bloom-filter
+  de-duplicator keep memory flat on huge runs instead of materializing lists in
+  RAM; explicit types make the memory model easy to reason about.
+- **Safer by construction.** Static typing, `go vet`, the race detector and a
+  table-driven test suite catch whole classes of bugs before they ship — and the
+  minimal, vendored dependency set (even MD4/NTLM is in-tree) keeps the
+  supply-chain surface tiny.
+
+The trade-off is Python's faster prototyping and larger ecosystem; for a
+distributable, high-throughput CLI meant to run untrusted-network-side, the Go
+properties win.
 
 ## Contents
 
+- [Why pwprofiler](#why-pwprofiler) · [Why Go instead of Python](#why-go-instead-of-python)
 - [Install](#install) · [Local UI & console](#local-ui-and-interactive-console)
 - [Quick start](#quick-start) · [Usage](#usage) · [Config](#config)
-- [Ranking for accuracy](#ranking-for-accuracy) · [Estimate effort](#estimate-effort-before-a-run)
+- [Ranking for accuracy](#ranking-for-accuracy)
+- [Breach-informed & keyboard-walk seeding](#seeding-breach-informed-and-keyboard-walk-candidates)
+- [Hash output](#hash-output--match-against-a-captured-hash) · [Estimate effort](#estimate-effort-before-a-run)
 - [Large & exhaustive wordlists](#large-and-exhaustive-wordlists)
 - [Policies, sessions & verification](#reusable-policies-sessions-and-verification)
 - [Cracking pipe examples](#cracking-pipe-examples)
@@ -232,11 +302,28 @@ you can pipe candidates straight into a cracker without polluting the stream.
 pwprofiler generate --config <file.yaml> [flags]
 
 Flags:
-  -c, --config string    path to YAML config (required)
-  -o, --output string    write candidates here instead of the config's output.file / stdout
-      --mode string      override output mode: wordlist|rules
-      --workers int      mutation worker goroutines (>1 is faster but unordered) (default 1)
-      --dedup string     dedup strategy: auto|exact|bloom (default "auto")
+  -c, --config string       path to YAML config (required)
+  -o, --output string       write candidates here instead of the config's output.file / stdout
+      --mode string         override output mode: wordlist|rules
+      --workers int         mutation worker goroutines (>1 is faster but unordered) (default 1)
+      --dedup string        dedup strategy: auto|exact|bloom (default "auto")
+      --rule-format string  rules-mode output format: hashcat|john (default "hashcat")
+      --keyboard-walks      seed common keyboard walks as extra base tokens
+      --seed-common int     seed the bundled common-password corpus: N>0 top N, 0 all, -1 off (default -1)
+      --emit-hashes strings also emit each candidate's hash: md5,sha1,sha256,sha512,ntlm (wordlist mode)
+      --hash-sep string     separator between candidate and its hashes (default ":")
+      --exhaustive          enumerate configured rules with no caps (exact dedup)
+
+Subcommands:
+  generate   generate candidates from a YAML config
+  files      generate from one or more text files (flag-driven)
+  console    interactive audit workspace
+  serve      local browser UI at http://127.0.0.1:8080
+  rank       reorder a wordlist best-first (--top N, --model, --exclude)
+  hash       emit candidate:hash lines for a wordlist (--algos md5,ntlm,...)
+  estimate   report keyspace and time-to-exhaust for a config
+  check      count net-new coverage vs an existing/cracked list
+  validate   validate a config without generating
 ```
 
 For large runs, `--workers N` (1–64) parallelizes mutation across N goroutines (a single
@@ -290,6 +377,60 @@ less often. Ranking is an **ordering signal, not a password-strength meter**, an
 it lives in the isolated [`internal/rank`](internal/rank/rank.go) package so it
 can be reused and tuned independently. See
 [algorithm notes](docs/ALGORITHM.md) for the exact scoring model.
+
+## Seeding breach-informed and keyboard-walk candidates
+
+Real passwords are dominated by a small set of universally weak choices. Seed
+them so a run always tries the obvious guesses first:
+
+```bash
+# Seed the top 100 bundled common passwords as base tokens (then mutate/combine)
+pwprofiler generate -c profile.yaml --seed-common 100
+
+# Seed all bundled common passwords + keyboard walks
+pwprofiler generate -c profile.yaml --seed-common 0 --keyboard-walks
+```
+
+`--seed-common N` injects the top `N` entries of a bundled, curated
+common-password corpus (`0` = all; omit the flag to disable). Keyboard walks
+(`qwerty`, `1q2w3e`, `qazwsx`, number-pad runs, …) come from `--keyboard-walks`.
+Both flow through the full mutation, combination and policy pipeline.
+
+For **large external corpora** from public research repos (SecLists, rockyou,
+HIBP), don't inject millions of tokens into generation — use them where they
+belong:
+
+```bash
+# Rank your candidates by a sector/target corpus, and skip anything already tried
+pwprofiler rank -i candidates.txt --model rockyou-top.txt \
+  --exclude already-cracked.txt -o ranked.txt
+```
+
+The bundled corpus is public composition knowledge (the common weak passwords at
+the top of every breach-analysis report), **not** a dump of anyone's
+credentials. pwprofiler never produces real leaked credentials.
+
+## Hash output — match against a captured hash
+
+In an authorized engagement you often hold a captured hash and want to know
+which candidate produces it. Emit each candidate with its hash and compare:
+
+```bash
+# Append NTLM + MD5 to every candidate: "candidate:ntlm:md5"
+pwprofiler generate -c profile.yaml --emit-hashes ntlm,md5
+
+# Or hash an existing list, composing with rank for "top N, hashed"
+pwprofiler generate -c profile.yaml \
+  | pwprofiler rank --top 1000 \
+  | pwprofiler hash --algos ntlm > top1000.ntlm
+```
+
+Supported fast, unsalted algorithms: `md5`, `sha1`, `sha256`, `sha512`, `ntlm`
+(the Windows/Active-Directory NT hash). Salted/slow schemes (bcrypt, argon2,
+scrypt, PBKDF2) are **intentionally unsupported** — their output depends on a
+per-hash salt, so a precomputed `candidate:hash` list can't match them. Crack
+those directly with the wordlist and hashcat/John instead. The browser UI offers
+the same algorithms as checkboxes and streams the paired file locally.
 
 ## Estimate effort before a run
 
@@ -350,13 +491,24 @@ See [the exact coverage contract](docs/ALGORITHM.md#exhaustive-configured-rule-m
 
 ```yaml
 profile:
+  type: person             # person | company | other (default person)
+  # Person-oriented fields:
   first_name: John
   last_name: Doe
   nickname: JD
   dob: 1990-05-12          # YYYY-MM-DD
   partner: Jane
+  children: [sam, max]
   pets: [rex, milo]
+  # Company-oriented fields:
   company: Acme Corp
+  brands: [roadrunner]
+  products: [rocket skates]
+  locations: [phoenix]
+  departments: [engineering]
+  founders: [wile]
+  founded: 1998            # founding year (4 digits) — also yields "98"
+  # Shared:
   domain: acme.com
   keywords: [falcons, chess]
 
@@ -364,6 +516,9 @@ rules:
   case: [lower, capitalize, upper]   # identity|lower|upper|capitalize|toggle|invert
   leet: partial                      # off | partial | full
   separators: ["", ".", "_"]         # joined between combined tokens
+  keyboard_walks: false              # seed qwerty/1q2w3e/qazwsx as base tokens
+  seed_common: false                 # seed the bundled common-password corpus
+  seed_common_top: 100               # how many common passwords to seed (0 = all)
   affixes:
     years: {from_dob: true, extra: [2024, 2025]}   # appended + prepended
     suffixes: ["123", "!", "@", "01"]              # appended
@@ -381,6 +536,11 @@ output:
   budget: 5000000                    # global hard cap on candidates
   dedupe: true
 ```
+
+Every profile field is optional; validation only requires at least one usable
+value overall. `type` selects the most relevant field set but does **not**
+restrict which fields contribute — a company profile may still carry a founder's
+personal details, and all of them become tokens.
 
 Unknown keys and malformed values (bad dates, invalid enums) are rejected at
 load time with a clear error.

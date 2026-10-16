@@ -18,6 +18,7 @@ import (
 
 	"github.com/praneeth132006/Password-Profiler/internal/combine"
 	"github.com/praneeth132006/Password-Profiler/internal/dedup"
+	"github.com/praneeth132006/Password-Profiler/internal/hashes"
 	"github.com/praneeth132006/Password-Profiler/internal/mutate"
 	"github.com/praneeth132006/Password-Profiler/internal/output"
 	"github.com/praneeth132006/Password-Profiler/internal/policy"
@@ -48,7 +49,7 @@ func newRootCmd() *cobra.Command {
 		Version:       version,
 	}
 	root.RunE = runConsole
-	root.AddCommand(newGenerateCmd(), newConsoleCmd(), newFilesCmd(), newServeCmd(), newCheckCmd(), newValidateCmd(), newRankCmd(), newEstimateCmd())
+	root.AddCommand(newGenerateCmd(), newConsoleCmd(), newFilesCmd(), newServeCmd(), newCheckCmd(), newValidateCmd(), newRankCmd(), newEstimateCmd(), newHashCmd())
 	return root
 }
 
@@ -56,8 +57,10 @@ func newRootCmd() *cobra.Command {
 type genOpts struct {
 	workers    int // mutation worker goroutines (>1 trades output ordering for speed)
 	report     *generationReport
-	dedup      string // auto | exact | bloom
-	ruleFormat string // hashcat | john (rules mode only)
+	dedup      string     // auto | exact | bloom
+	ruleFormat string     // hashcat | john (rules mode only)
+	hashes     hashes.Set // when non-empty, emit candidate + hashes per line
+	hashSep    string     // field separator for hash output (default ":")
 }
 
 func newGenerateCmd() *cobra.Command {
@@ -68,6 +71,9 @@ func newGenerateCmd() *cobra.Command {
 		opts          genOpts
 		exhaustive    bool
 		keyboardWalks bool
+		emitHashes    []string
+		hashSep       string
+		seedCommon    int
 	)
 	cmd := &cobra.Command{
 		Use:   "generate",
@@ -83,6 +89,10 @@ func newGenerateCmd() *cobra.Command {
 			}
 			if keyboardWalks {
 				cfg.Rules.KeyboardWalks = true
+			}
+			if seedCommon >= 0 {
+				cfg.Rules.SeedCommon = true
+				cfg.Rules.SeedCommonTop = seedCommon
 			}
 			if modeFlag != "" {
 				cfg.Output.Mode = modeFlag
@@ -103,6 +113,18 @@ func newGenerateCmd() *cobra.Command {
 			default:
 				return fmt.Errorf("--rule-format %q: must be hashcat|john", opts.ruleFormat)
 			}
+			set, err := hashes.NewSet(emitHashes)
+			if err != nil {
+				return err
+			}
+			if !set.Empty() && cfg.Output.Mode == "rules" {
+				return fmt.Errorf("--emit-hashes applies to wordlist mode; rules mode writes a base list + rule file for the cracker")
+			}
+			opts.hashes = set
+			opts.hashSep = hashSep
+			if opts.hashSep == "" {
+				opts.hashSep = ":"
+			}
 			return runGenerate(cmd, cfg, opts)
 		},
 	}
@@ -114,6 +136,9 @@ func newGenerateCmd() *cobra.Command {
 	cmd.Flags().IntVar(&opts.workers, "workers", 1, "mutation worker goroutines (>1 speeds up large runs but does not preserve output order)")
 	cmd.Flags().StringVar(&opts.dedup, "dedup", "auto", "dedup strategy: auto|exact|bloom (auto uses bloom for large budgets)")
 	cmd.Flags().StringVar(&opts.ruleFormat, "rule-format", "hashcat", "rules-mode output format: hashcat|john")
+	cmd.Flags().StringSliceVar(&emitHashes, "emit-hashes", nil, "also emit each candidate's hash for matching captured hashes: md5,sha1,sha256,sha512,ntlm (comma-separated; wordlist mode only)")
+	cmd.Flags().StringVar(&hashSep, "hash-sep", ":", "field separator between candidate and its hashes in --emit-hashes output")
+	cmd.Flags().IntVar(&seedCommon, "seed-common", -1, "seed the bundled common-password corpus as base tokens: N>0 seeds the top N, 0 seeds all, -1 (default) disables")
 	_ = cmd.MarkFlagRequired("config")
 	return cmd
 }
@@ -225,6 +250,14 @@ func runWordlist(cmd *cobra.Command, cfg *profile.Config, opts genOpts) (retErr 
 		fmt.Fprintln(cmd.ErrOrStderr(), "pwprofiler: exhaustive configured-rule traversal; no count/work/byte caps, exact dedup; memory and disk use may grow substantially")
 	}
 	w := output.New(sink, buildDeduper(cfg, opts.dedup), budget)
+	if !opts.hashes.Empty() {
+		sep := opts.hashSep
+		if sep == "" {
+			sep = ":"
+		}
+		set := opts.hashes
+		w.SetLineFunc(func(c string) string { return set.Line(c, sep) })
+	}
 
 	start := time.Now()
 	search, err := expandStream(ctx, source, eng, pol, w, opts.workers)

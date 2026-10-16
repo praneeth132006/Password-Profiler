@@ -7,6 +7,7 @@ package tokens
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,15 +20,22 @@ import (
 // and tests see stable output regardless of which sources contributed.
 func Build(cfg *profile.Config) []string {
 	base := Extract(cfg.Profile)
-	if cfg == nil || !cfg.Rules.KeyboardWalks {
+	if cfg == nil || (!cfg.Rules.KeyboardWalks && !cfg.Rules.SeedCommon) {
 		return base
 	}
 	set := newOrderedSet()
 	for _, t := range base {
 		set.add(t)
 	}
-	for _, t := range keyboardWalkSeeds {
-		set.add(t)
+	if cfg.Rules.KeyboardWalks {
+		for _, t := range keyboardWalkSeeds {
+			set.add(t)
+		}
+	}
+	if cfg.Rules.SeedCommon {
+		for _, t := range CommonSeeds(cfg.Rules.SeedCommonTop) {
+			set.add(t)
+		}
 	}
 	out := set.slice()
 	sort.Strings(out)
@@ -66,14 +74,44 @@ func Extract(p profile.Profile) []string {
 		}
 	}
 
+	// Person-oriented fields.
 	addWord(p.FirstName)
 	addWord(p.LastName)
 	addWord(p.Nickname)
 	addWord(p.Partner)
-	addWord(p.Company)
+	for _, c := range p.Children {
+		addWord(c)
+	}
 	for _, pet := range p.Pets {
 		addWord(pet)
 	}
+
+	// Company-oriented fields.
+	addWord(p.Company)
+	for _, v := range p.Brands {
+		addWord(v)
+	}
+	for _, v := range p.Products {
+		addWord(v)
+	}
+	for _, v := range p.Locations {
+		addWord(v)
+	}
+	for _, v := range p.Departments {
+		addWord(v)
+	}
+	for _, v := range p.Founders {
+		addWord(v)
+	}
+	if p.Founded != 0 {
+		y := strconv.Itoa(p.Founded)
+		set.add(y)
+		if len(y) == 4 {
+			set.add(y[2:]) // two-digit form, e.g. 1998 -> 98
+		}
+	}
+
+	// Shared / generic fields.
 	for _, kw := range p.Keywords {
 		addWord(kw)
 	}

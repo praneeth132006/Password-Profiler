@@ -9,9 +9,28 @@ const link = document.getElementById("link");
 const preview = document.getElementById("preview");
 const previewLabel = document.getElementById("preview-label");
 const copyButton = document.getElementById("copy");
+const topInput = document.getElementById("top");
+const topPresets = document.getElementById("top-presets");
 
 let objectURL = null;
 let controller = null;
+
+// Target-type segmented control reveals the relevant field group.
+for (const radio of form.querySelectorAll('input[name="target_type"]')) {
+  radio.addEventListener("change", () => {
+    if (radio.checked) form.dataset.target = radio.value;
+  });
+}
+
+// Top-N presets drive the hidden `top` field (0 = keep everything).
+topPresets?.addEventListener("click", (event) => {
+  const chip = event.target.closest(".chip");
+  if (!chip) return;
+  topInput.value = chip.dataset.top;
+  for (const c of topPresets.querySelectorAll(".chip")) {
+    c.classList.toggle("is-active", c === chip);
+  }
+});
 
 // Show how many files each upload holds, and mark the card as filled.
 for (const input of document.querySelectorAll('input[type="file"]')) {
@@ -62,8 +81,12 @@ form.addEventListener("submit", async (event) => {
   if (Number(data.get("min")) > Number(data.get("max"))) {
     result.classList.add("error");
     statusText.textContent = "Minimum length cannot exceed maximum length.";
+    result.scrollIntoView({ block: "nearest" });
     return;
   }
+
+  const hashing = form.querySelectorAll('input[name="hashes"]:checked').length > 0;
+  const topN = Number(data.get("top"));
 
   controller = new AbortController();
   cancel.hidden = false;
@@ -96,13 +119,16 @@ form.addEventListener("submit", async (event) => {
       statusText.textContent =
         "Exhaustive configuration ready. Save audit.yaml, then run: pwprofiler generate -c audit.yaml -o passwords.txt — this file includes your input words, so keep it private.";
       download.hidden = false;
+      result.scrollIntoView({ block: "nearest" });
       return;
     }
 
-    link.download = "passwords.txt";
-    link.innerHTML =
-      'Download passwords.txt <span aria-hidden="true">↓</span>';
-    previewLabel.textContent = "Preview first 20 candidates";
+    const filename = hashing ? "passwords-hashes.txt" : "passwords.txt";
+    link.download = filename;
+    link.innerHTML = `Download ${filename} <span aria-hidden="true">↓</span>`;
+    previewLabel.textContent = hashing
+      ? "Preview — candidate : hash…"
+      : "Preview first 20 candidates";
     preview.textContent = (await blob.slice(0, 32768).text())
       .trimEnd()
       .split("\n")
@@ -112,17 +138,22 @@ form.addEventListener("submit", async (event) => {
     const count = Number(
       response.headers.get("X-Candidate-Count"),
     ).toLocaleString();
-    let message = `${count} unique candidates ready. Download your wordlist below.`;
+    let message =
+      topN > 0
+        ? `Top ${count} candidates (ranked best-first) ready.`
+        : `${count} unique candidates ready. Download your wordlist below.`;
+    if (hashing) message += " Each line pairs a candidate with its hash(es).";
     if (response.headers.get("X-Limit-Reached") === "true") {
       message +=
-        " Candidate limit reached — increase it to explore more results.";
+        " Candidate budget reached — raise it or export a CLI config to explore more.";
     }
     if (response.headers.get("X-Search-Limited") === "true") {
       message +=
-        " Search limits were reached, so this is a partial list. See the algorithm guide for exhaustive runs.";
+        " Search limits were reached, so this is a partial list; export an exhaustive config for a complete run.";
     }
     statusText.textContent = message;
     download.hidden = false;
+    result.scrollIntoView({ block: "nearest" });
   } catch (error) {
     result.classList.add("error");
     statusText.textContent =

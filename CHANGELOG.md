@@ -16,6 +16,23 @@ reaches 1.0.
 ## [Unreleased]
 
 ### Added
+- **Target-type profiles** (`profile.type: person | company | other`): the UI and
+  schema gain company-oriented fields (brands, products, locations, departments,
+  founders, founding year) and person fields (children), all contributing tokens.
+- **Hash output for match-against-capture**: `generate --emit-hashes md5,sha1,sha256,sha512,ntlm`
+  and a new standalone `hash` subcommand emit `candidate:hash` lines. Includes a
+  vendored, dependency-free MD4 for NTLM. Salted/slow hashes are intentionally
+  excluded.
+- **Breach-informed common-password seeding**: a bundled, curated common-password
+  corpus can be seeded as base tokens via `rules.seed_common` /
+  `generate --seed-common N` (top N, 0 = all). Public composition knowledge only —
+  never real leaked credentials.
+- **Redesigned browser UI**: target-type segmented control that swaps field sets,
+  hash-algorithm checkboxes, Top 100 / 1,000 / 10k / All ranking presets, common-
+  password and keyboard-walk toggles, and a refreshed layout. Still fully offline
+  with a strict CSP.
+- **Top-N in the browser**: generated candidates are ranked best-first and trimmed
+  to the chosen preset before download.
 - **Transliteration / diacritic folding in token extraction**: accented OSINT
   values now also yield their ASCII forms automatically — `José → jose`,
   `Müller → muller` and `mueller`, `straße → strasse` — so a target who

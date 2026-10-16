@@ -13,9 +13,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/praneeth132006/Password-Profiler/internal/hashes"
+	"github.com/praneeth132006/Password-Profiler/internal/rank"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
+
+// formList splits a textarea/comma field into a trimmed, non-empty string list.
+func formList(v string) []string {
+	v = strings.ReplaceAll(v, "\r\n", "\n")
+	fields := strings.FieldsFunc(v, func(r rune) bool { return r == '\n' || r == ',' })
+	var out []string
+	for _, f := range fields {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
 
 //go:embed web/index.html
 var indexHTML []byte
@@ -138,7 +153,7 @@ func webHandler(host string) http.Handler {
 				}
 			}
 		}
-		for key, dest := range map[string]*int{"max_combine": &s.MaxCombine, "depth": &s.Depth, "leet_cap": &s.LeetCap} {
+		for key, dest := range map[string]*int{"max_combine": &s.MaxCombine, "depth": &s.Depth, "leet_cap": &s.LeetCap, "founded": &s.Founded, "seed_common_top": &s.SeedCommonTop, "top": &s.Top} {
 			if value := r.FormValue(key); value != "" {
 				*dest, err = strconv.Atoi(value)
 				if err != nil {
@@ -150,6 +165,28 @@ func webHandler(host string) http.Handler {
 		if value := r.FormValue("leet"); value != "" {
 			s.Leet = value
 		}
+		// Target type and structured profile fields.
+		if t := strings.TrimSpace(r.FormValue("target_type")); t != "" {
+			s.TargetType = t
+		}
+		s.FirstName = strings.TrimSpace(r.FormValue("first_name"))
+		s.LastName = strings.TrimSpace(r.FormValue("last_name"))
+		s.Nickname = strings.TrimSpace(r.FormValue("nickname"))
+		s.DOB = strings.TrimSpace(r.FormValue("dob"))
+		s.Partner = strings.TrimSpace(r.FormValue("partner"))
+		s.Children = formList(r.FormValue("children"))
+		s.Pets = formList(r.FormValue("pets"))
+		s.Company = strings.TrimSpace(r.FormValue("company"))
+		s.Brands = formList(r.FormValue("brands"))
+		s.Products = formList(r.FormValue("products"))
+		s.Locations = formList(r.FormValue("locations"))
+		s.Departments = formList(r.FormValue("departments"))
+		s.Founders = formList(r.FormValue("founders"))
+		s.Domain = strings.TrimSpace(r.FormValue("domain"))
+		// Enrichment + output options.
+		s.KeyboardWalks = r.FormValue("keyboard_walks") == "on"
+		s.SeedCommon = r.FormValue("seed_common") == "on"
+		s.Hashes = r.MultipartForm.Value["hashes"]
 		s.RepeatTokens = r.FormValue("repeat_tokens") == "on"
 		s.Exhaustive = r.URL.Path == "/api/config"
 		if !s.Exhaustive && s.Budget > 100000 {
@@ -201,6 +238,13 @@ func webHandler(host string) http.Handler {
 			_, _ = w.Write(data)
 			return
 		}
+		// Resolve the hash selection up front so bad input is a clean 400.
+		hashSet, herr := hashes.NewSet(s.Hashes)
+		if herr != nil {
+			http.Error(w, herr.Error(), 400)
+			return
+		}
+
 		var result, stats bytes.Buffer
 		cmd := &cobra.Command{}
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
@@ -209,6 +253,7 @@ func webHandler(host string) http.Handler {
 		cmd.SetOut(&result)
 		cmd.SetErr(&stats)
 		report := &generationReport{}
+		// Always generate plaintext first so ranking and hashing compose cleanly.
 		if err = runWordlist(cmd, cfg, genOpts{workers: 1, dedup: "exact", report: report}); err != nil {
 			http.Error(w, err.Error(), 422)
 			return
@@ -217,12 +262,42 @@ func webHandler(host string) http.Handler {
 			http.Error(w, "No candidates match this policy. Add longer input words or adjust the policy.", 422)
 			return
 		}
+
+		// Optional: keep only the N most likely candidates (best-first).
+		plaintext := result.Bytes()
+		if s.Top > 0 {
+			var ranked bytes.Buffer
+			if _, err = rank.StreamWith(bytes.NewReader(plaintext), &ranked, rank.Options{Top: s.Top}); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			plaintext = ranked.Bytes()
+		}
+
+		// Optional: append hashes to each candidate for match-against-capture.
+		final := plaintext
+		if !hashSet.Empty() {
+			var withHashes bytes.Buffer
+			for _, line := range strings.Split(strings.TrimRight(string(plaintext), "\n"), "\n") {
+				if line == "" {
+					continue
+				}
+				withHashes.WriteString(hashSet.Line(line, ":"))
+				withHashes.WriteByte('\n')
+			}
+			final = withHashes.Bytes()
+		}
+
+		filename := "passwords.txt"
+		if !hashSet.Empty() {
+			filename = "passwords-hashes.txt"
+		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="passwords.txt"`)
-		count := bytes.Count(result.Bytes(), []byte{'\n'})
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		count := bytes.Count(final, []byte{'\n'})
 		w.Header().Set("X-Candidate-Count", strconv.Itoa(count))
 		w.Header().Set("X-Search-Limited", strconv.FormatBool(report.SearchLimited))
-		w.Header().Set("X-Limit-Reached", strconv.FormatBool(count >= s.Budget))
-		_, _ = w.Write(result.Bytes())
+		w.Header().Set("X-Limit-Reached", strconv.FormatBool(bytes.Count(plaintext, []byte{'\n'}) >= s.Budget))
+		_, _ = w.Write(final)
 	})
 }

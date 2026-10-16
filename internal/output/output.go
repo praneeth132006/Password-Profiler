@@ -22,9 +22,16 @@ type Stats struct {
 // Writer buffers, dedupes, and budget-caps candidate output.
 type Writer struct {
 	bw    *bufio.Writer
-	dd    dedup.Deduper // nil => no de-duplication
+	dd    dedup.Deduper       // nil => no de-duplication
+	line  func(string) string // nil => write the candidate verbatim
 	stats Stats
 }
+
+// SetLineFunc installs a formatter applied to each accepted candidate just
+// before it is written (e.g. to append hashes). De-duplication and the budget
+// still operate on the raw candidate, so the plaintext list stays unique and
+// capped regardless of formatting. Passing nil restores verbatim output.
+func (w *Writer) SetLineFunc(f func(string) string) { w.line = f }
 
 // New builds a Writer over w. Pass a dedup.Deduper to drop duplicates (an
 // Exact set for correctness, or a Bloom filter for bounded memory at scale);
@@ -58,7 +65,11 @@ func (w *Writer) Add(candidate string) (accepted bool, err error) {
 			return true, nil // accepted (not a stop condition), just suppressed
 		}
 	}
-	if _, err := w.bw.WriteString(candidate); err != nil {
+	out := candidate
+	if w.line != nil {
+		out = w.line(candidate)
+	}
+	if _, err := w.bw.WriteString(out); err != nil {
 		return false, fmt.Errorf("write candidate: %w", err)
 	}
 	if err := w.bw.WriteByte('\n'); err != nil {

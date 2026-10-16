@@ -39,10 +39,36 @@ type session struct {
 	Require      []string
 	Budget       int
 	Output       string
+
+	// Target profiling (UI-driven). TargetType selects the field set that is
+	// most relevant; all populated fields still contribute tokens.
+	TargetType  string
+	FirstName   string
+	LastName    string
+	Nickname    string
+	DOB         string
+	Partner     string
+	Children    []string
+	Pets        []string
+	Company     string
+	Brands      []string
+	Products    []string
+	Locations   []string
+	Departments []string
+	Founders    []string
+	Founded     int
+	Domain      string
+
+	// Generation enrichment / output options.
+	KeyboardWalks bool
+	SeedCommon    bool
+	SeedCommonTop int
+	Hashes        []string // md5, sha1, sha256, sha512, ntlm
+	Top           int      // keep only the N most likely (0 = all)
 }
 
 func newSession() *session {
-	return &session{MaxCombine: 2, Depth: 2, Leet: "partial", Min: 8, Max: 24, Require: []string{"upper", "lower", "digit", "special"}, Budget: 100000, Output: "passwords.txt"}
+	return &session{MaxCombine: 2, Depth: 2, Leet: "partial", Min: 8, Max: 24, Require: []string{"upper", "lower", "digit", "special"}, Budget: 100000, Output: "passwords.txt", TargetType: "person"}
 }
 
 func readWords(r io.Reader) ([]string, error) {
@@ -113,7 +139,50 @@ func (s *session) config() (*profile.Config, error) {
 	if s.Min < 0 || s.Max < 0 || s.Max > 128 {
 		return nil, fmt.Errorf("minimum must be nonnegative and maximum must be 0–128 (0 is unlimited)")
 	}
-	cfg := profile.Config{Profile: profile.Profile{Keywords: s.Keywords}, Rules: profile.Rules{Case: []string{"lower", "capitalize", "upper"}, Exhaustive: s.Exhaustive, RepeatTokens: s.RepeatTokens, LeetCap: s.LeetCap, Leet: s.Leet, MaxCombine: s.MaxCombine, Depth: s.Depth, Separators: []string{"", ".", "_", "-"}, Affixes: profile.Affixes{Suffixes: []string{"1!", "123!", strconv.Itoa(time.Now().Year()) + "!", "!", "123"}}}, Policy: profile.Policy{MinLen: s.Min, MaxLen: s.Max, Require: s.Require, MaxBytes: s.MaxBytes, MaxRepeat: s.MaxRepeat, Forbidden: s.Forbidden, Blocklist: s.Blocklist}, Output: profile.Output{Mode: "wordlist", File: s.Output, Budget: s.Budget, Dedupe: true}}
+	if s.Top < 0 {
+		return nil, fmt.Errorf("top must be >= 0 (0 keeps the whole list)")
+	}
+	targetType := s.TargetType
+	if targetType == "" {
+		targetType = "person"
+	}
+	prof := profile.Profile{
+		Type:        targetType,
+		FirstName:   s.FirstName,
+		LastName:    s.LastName,
+		Nickname:    s.Nickname,
+		DOB:         s.DOB,
+		Partner:     s.Partner,
+		Children:    s.Children,
+		Pets:        s.Pets,
+		Company:     s.Company,
+		Brands:      s.Brands,
+		Products:    s.Products,
+		Locations:   s.Locations,
+		Departments: s.Departments,
+		Founders:    s.Founders,
+		Founded:     s.Founded,
+		Domain:      s.Domain,
+		Keywords:    s.Keywords,
+	}
+	// Suffixes adapt to the target: both the current year and (for a company)
+	// the founding year are high-value affixes alongside the usual tails.
+	suffixes := []string{"1!", "123!", strconv.Itoa(time.Now().Year()) + "!", "!", "123", "1", "01"}
+	if s.Founded != 0 {
+		suffixes = append(suffixes, strconv.Itoa(s.Founded), strconv.Itoa(s.Founded)+"!")
+	}
+	cfg := profile.Config{
+		Profile: prof,
+		Rules: profile.Rules{
+			Case: []string{"lower", "capitalize", "upper"}, Exhaustive: s.Exhaustive, RepeatTokens: s.RepeatTokens,
+			LeetCap: s.LeetCap, Leet: s.Leet, MaxCombine: s.MaxCombine, Depth: s.Depth,
+			KeyboardWalks: s.KeyboardWalks, SeedCommon: s.SeedCommon, SeedCommonTop: s.SeedCommonTop,
+			Separators: []string{"", ".", "_", "-"},
+			Affixes:    profile.Affixes{Years: profile.Years{FromDOB: s.DOB != ""}, Suffixes: suffixes},
+		},
+		Policy: profile.Policy{MinLen: s.Min, MaxLen: s.Max, Require: s.Require, MaxBytes: s.MaxBytes, MaxRepeat: s.MaxRepeat, Forbidden: s.Forbidden, Blocklist: s.Blocklist},
+		Output: profile.Output{Mode: "wordlist", File: s.Output, Budget: s.Budget, Dedupe: true},
+	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return nil, err

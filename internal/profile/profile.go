@@ -23,24 +23,42 @@ type Config struct {
 }
 
 // Profile holds the OSINT collected about a target. Every field is optional on
-// its own, but validation requires at least one usable value overall.
+// its own, but validation requires at least one usable value overall. The Type
+// selects which field set is most relevant (person / company / other); all
+// fields still contribute tokens regardless of Type, so a mixed profile works.
 type Profile struct {
+	Type string `yaml:"type"` // person | company | other (default person)
+
+	// Person-oriented fields.
 	FirstName string   `yaml:"first_name"`
 	LastName  string   `yaml:"last_name"`
 	Nickname  string   `yaml:"nickname"`
 	DOB       string   `yaml:"dob"` // YYYY-MM-DD
 	Partner   string   `yaml:"partner"`
+	Children  []string `yaml:"children"`
 	Pets      []string `yaml:"pets"`
-	Company   string   `yaml:"company"`
-	Domain    string   `yaml:"domain"`
-	Keywords  []string `yaml:"keywords"`
+
+	// Company-oriented fields.
+	Company     string   `yaml:"company"`
+	Brands      []string `yaml:"brands"`
+	Products    []string `yaml:"products"`
+	Locations   []string `yaml:"locations"`
+	Departments []string `yaml:"departments"`
+	Founders    []string `yaml:"founders"`
+	Founded     int      `yaml:"founded"` // founding year, e.g. 1998
+
+	// Shared / generic fields.
+	Domain   string   `yaml:"domain"`
+	Keywords []string `yaml:"keywords"`
 }
 
 // Rules configures the mutation and combination stages.
 type Rules struct {
 	Exhaustive        bool     `yaml:"exhaustive"`
 	RepeatTokens      bool     `yaml:"repeat_tokens"`
-	KeyboardWalks     bool     `yaml:"keyboard_walks"` // seed common keyboard walks (qwerty, 1q2w3e, ...)
+	KeyboardWalks     bool     `yaml:"keyboard_walks"`  // seed common keyboard walks (qwerty, 1q2w3e, ...)
+	SeedCommon        bool     `yaml:"seed_common"`     // seed the bundled common-password corpus as base tokens
+	SeedCommonTop     int      `yaml:"seed_common_top"` // how many common passwords to seed (0 = all bundled)
 	LeetCap           int      `yaml:"leet_cap"`
 	MaxVariants       int      `yaml:"max_variants"`
 	MaxAttempts       int      `yaml:"max_attempts"`
@@ -147,6 +165,9 @@ func (c *Config) applyDefaults() {
 	if c.Rules.Depth == 0 {
 		c.Rules.Depth = 1
 	}
+	if c.Profile.Type == "" {
+		c.Profile.Type = "person"
+	}
 	if c.Output.Mode == "" {
 		c.Output.Mode = "wordlist"
 	}
@@ -173,11 +194,22 @@ func (c *Config) validate() error {
 	if c.Rules.MaxCombine > 8 {
 		return fmt.Errorf("rules.max_combine must be between 1 and 8")
 	}
+	if c.Rules.SeedCommonTop < 0 {
+		return fmt.Errorf("rules.seed_common_top must be >= 0 (0 = all bundled)")
+	}
 	if c.Rules.Depth > 8 {
 		return fmt.Errorf("rules.depth must be between 1 and 8")
 	}
 	if c.Output.Budget < 0 {
 		return fmt.Errorf("output.budget must be positive")
+	}
+	switch c.Profile.Type {
+	case "person", "company", "other":
+	default:
+		return fmt.Errorf("profile.type %q: must be person|company|other", c.Profile.Type)
+	}
+	if c.Profile.Founded != 0 && (c.Profile.Founded < 1000 || c.Profile.Founded > 9999) {
+		return fmt.Errorf("profile.founded %d: must be a 4-digit year or 0", c.Profile.Founded)
 	}
 	if c.Profile.isEmpty() {
 		return fmt.Errorf("profile: at least one field (name, keywords, company, ...) is required")
@@ -232,7 +264,10 @@ func (c *Config) validate() error {
 func (p Profile) isEmpty() bool {
 	return p.FirstName == "" && p.LastName == "" && p.Nickname == "" &&
 		p.DOB == "" && p.Partner == "" && p.Company == "" && p.Domain == "" &&
-		len(p.Pets) == 0 && len(p.Keywords) == 0
+		p.Founded == 0 &&
+		len(p.Children) == 0 && len(p.Pets) == 0 && len(p.Brands) == 0 &&
+		len(p.Products) == 0 && len(p.Locations) == 0 && len(p.Departments) == 0 &&
+		len(p.Founders) == 0 && len(p.Keywords) == 0
 }
 
 // ParsePolicy loads a standalone policy document with the same strict validation as a config.
