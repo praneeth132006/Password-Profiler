@@ -69,4 +69,4 @@ jobs:
             if curl --fail http://127.0.0.1:8187/ -o /tmp/pwprofiler.html; then break; fi
             sleep 1
           done
-          grep -q 'Build a more focused wordlist' /tmp/pwprofiler.html
+          grep -q 'Password Profiler · Local workspace' /tmp/pwprofiler.html
